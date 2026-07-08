@@ -1,0 +1,28 @@
+{
+  "interest_rates": {
+    "savings_account":   "3 point 5 percent per annum",
+    "fixed_deposit_1yr": "6 point 5 percent per annum",
+    "fixed_deposit_3yr": "7 point 0 percent per annum",
+    "fixed_deposit_5yr": "7 point 25 percent per annum",
+    "home_loan":         "8 point 5 percent per annum, floating rate",
+    "personal_loan":     "11 percent per annum",
+    "education_loan":    "9 percent per annum",
+    "car_loan":          "9 point 5 percent per annum"
+  },
+  "loan_repayment": {
+    "info": "Loan repayment amount depends on the principal, the interest rate, and the loan tenure. Please visit the nearest branch or use the EMI calculator at the branch kiosk for an exact figure."
+  },
+  "account_procedures": {
+    "name_change":      "To change your name in bank records, submit a written request along with a gazette notification or marriage certificate at your home branch.",
+    "mobile_update":    "To update your registered mobile number, visit any branch with your Aadhaar card.",
+    "atm_block":        "To block your ATM card immediately, please call our 24-hour helpline at 1800 XXX XXXX.",
+    "pin_change":       "To change your ATM PIN, visit any branch ATM and use your current PIN along with the one-time password sent to your registered mobile.",
+    "cheque_book":      "To request a cheque book, submit a request at the branch or through net banking. Please allow 5 to 7 working days for delivery.",
+    "internet_banking": "To activate internet banking, visit the branch with a valid photo identity document and fill in the activation form.",
+    "mini_statement":   "To get your last 5 transactions, visit an ATM, use SMS banking by sending BAL to our banking number, or visit any branch.",
+    "branch_locator":   "To find the nearest branch, please use the branch locator on our website or ask at any branch for directions.",
+    "nominee_update":   "To update your nominee details, fill in Form DA-1 at your home branch in the presence of a witness.",
+    "general":          "For account-related queries, please visit your nearest branch with a valid photo identity document."
+  },
+  "check_balance_note": "Real-time balance lookup is not available in this demonstration. In a production deployment this would connect to the core banking system. For your current balance, please visit a branch or use the ATM."
+}

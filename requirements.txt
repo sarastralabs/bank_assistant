@@ -1,0 +1,104 @@
+# ── Shared / cross-module ──────────────────────────────────────────────────────
+# torch: GPU/CPU device detection for all modules.
+# IndicTransToolkit recommends >=2.5; bump from STT's >=2.1 requirement.
+# Use the CPU-only build on the client deployment machine:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.5.0
+
+# transformers: STT model conversion + Translation (IndicTrans2) inference.
+# IndicTransToolkit requires >=4.51; bump from STT's >=4.36 requirement.
+transformers>=4.51.0,<5
+
+# huggingface_hub: model download and cache management for all modules.
+huggingface_hub>=0.23,<1
+
+# Numerics — IndicTransToolkit requires >=2.1; bump from STT's >=1.24.
+numpy>=2.1,<3
+
+# Reporting (shared by benchmark scripts across all modules)
+tabulate>=0.9.0
+
+
+# ── STT Module (Module 1) ──────────────────────────────────────────────────────
+# faster-whisper requires ctranslate2>=4.0,<5 and huggingface_hub>=0.23
+# See: https://github.com/SYSTRAN/faster-whisper/blob/master/requirements.txt
+faster-whisper==1.1.1
+ctranslate2>=4.0,<5
+
+# ct2-transformers-converter CLI is installed as part of ctranslate2
+tokenizers>=0.13,<1
+
+# Audio I/O (faster-whisper uses av internally; soundfile for validation)
+av>=11,<14
+soundfile>=0.12.1
+
+# STT metrics
+jiwer>=3.0.4
+
+
+# ── Translation Module (Module 2) ─────────────────────────────────────────────
+# IndicTransToolkit: IndicProcessor for pre/post-processing IndicTrans2 I/O.
+#
+# INSTALL NOTE — Windows requires the --no-build-isolation flag:
+#   pip install IndicTransToolkit --no-build-isolation
+#
+# This is necessary because the Cython build step must resolve numpy/setuptools
+# headers from the active environment on Windows. Without the flag, the build
+# fails at the Cython compilation step.
+# Linux/macOS: pip install IndicTransToolkit  (standard install, no flag needed)
+#
+# Verified: Windows 11, Python 3.12 — imports cleanly with --no-build-isolation.
+IndicTransToolkit>=1.1
+
+# sentencepiece: tokenizer backend for IndicTrans2 AutoTokenizer
+sentencepiece>=0.1.99
+
+# sacrebleu: BLEU and chrF2++ scoring for translation benchmark
+# Use tokenize="flores200" for Indic scripts (not the default Moses tokenizer)
+# ── NLU Module (Module 3) ─────────────────────────────────────────────────────
+# scikit-learn: stratified split, classification metrics, confusion matrix
+scikit-learn>=1.3
+
+# seaborn: confusion matrix heatmap PNG output
+seaborn>=0.13
+
+# datasets, accelerate: already installed as transformers dependencies
+# (no explicit pin needed — pulled in transitively)
+
+# ── TTS Module (Module 5) ──────────────────────────────────────────────────────
+# parler-tts: Parler-TTS model class for description-conditioned synthesis.
+#
+# ⚠️  INSTALL WARNING — parler-tts 0.2.x has a BROKEN metadata pin:
+#     transformers==4.46.1 (hardcoded in setup.py — this is a bug in the package)
+#
+# Running `pip install parler-tts` or `pip install -r requirements.txt` will
+# SILENTLY DOWNGRADE transformers to 4.46.1, breaking IndicTransToolkit (>=4.51)
+# and the Translation module (which uses `dtype=` introduced in 4.51+).
+#
+# REQUIRED INSTALL COMMAND (use --no-deps to skip the broken constraint):
+#   pip install parler-tts --no-deps
+#
+# This is safe because parler-tts's actual code works correctly on
+# transformers 4.57.x — only its metadata is wrong.
+# After installing with --no-deps, verify: python -c "import transformers; print(transformers.__version__)"
+# should show >=4.51, NOT 4.46.x.
+#
+# DO NOT use: pip install parler-tts            (will downgrade transformers)
+# DO NOT use: pip install -r requirements.txt   (same problem — use setup.sh instead)
+#
+# Model: ai4bharat/indic-parler-tts (GATED — requires HF auth)
+#   Accept terms: https://huggingface.co/ai4bharat/indic-parler-tts
+#   Then: huggingface-cli login
+parler-tts
+
+# sounddevice: optional audio playback for synthesise(..., play=True)
+# Synthesis and file saving work without it — only playback degrades to a no-op.
+sounddevice>=0.4.6
+
+# Ensure transformers stays at >=4.51 AFTER parler-tts install.
+# This line is intentionally repeated from the Shared section — pip's resolver
+# must see this constraint to prevent parler-tts from winning the version conflict.
+# If parler-tts is installed with --no-deps (see above), this line is redundant
+# but harmless. If someone does `pip install parler-tts` directly and then
+# `pip install -r requirements.txt`, this line will trigger an upgrade back.
+transformers>=4.51.0,<5

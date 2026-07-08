@@ -1,0 +1,39 @@
+# ── Model binaries (too large for git) ────────────────────────────────────────
+# Run backend/stt/convert_models.py and backend/nlu/train.py to regenerate
+models/whisper-medium-ct2/
+models/whisper-medium-vaani-ct2/
+models/nlu-distilbert/
+!models/.gitkeep
+!models/nlu-distilbert/nlu_baseline_results.csv
+!models/nlu-distilbert/nlu_comparison_results.csv
+!models/nlu-distilbert/nlu_baseline_confusion_matrix.png
+!models/nlu-distilbert/nlu_finetuned_confusion_matrix.png
+!models/nlu-distilbert/nlu_finetuned_results.csv
+!models/nlu-distilbert/training_log.csv
+
+# ── Audio files (too large) ────────────────────────────────────────────────────
+data/stt_test_audio/*.wav
+data/tts_output/
+
+# ── Python cache ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# ── Output files ────────────────────────────────────────────────────────────────
+benchmark_results.csv
+translation_benchmark_results.csv
+
+# ── IDE / OS ────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Streamlit ────────────────────────────────────────────────────────────────────
+.streamlit/

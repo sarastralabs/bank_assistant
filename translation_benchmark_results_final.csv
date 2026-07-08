@@ -1,0 +1,17 @@
+phrase_id,kannada_source,reference_translation,model_translation,bleu_score,chrf_score,inference_time_s
+clip_001.wav,ನನ್ನ ಖಾತೆಯ ಬಾಕಿ ಎಷ್ಟಿದೆ,What is my account balance?,how much is my account balance,50.81,74.7,15.465
+clip_002.wav,ಹಣ ವರ್ಗಾಯಿಸಲು ಸಹಾಯ ಮಾಡಿ,Please help me transfer money,Help transfer money,28.25,54.32,0.139
+clip_003.wav,ಸಾಲ ಅರ್ಜಿ ಹೇಗೆ ಮಾಡಬೇಕು,How do I apply for a loan?,How to Apply for a Loan,12.87,42.91,0.207
+clip_004.wav,ನನ್ನ ಖಾತೆ ತೆರೆಯಬೇಕು,I want to open an account,I need to open my account.,15.62,45.38,0.205
+clip_005.wav,ಮಿನಿ ಸ್ಟೇಟ್ಮೆಂಟ್ ಬೇಕು,I need a mini statement,Need a mini-statement,14.13,71.34,0.249
+clip_006.wav,ಎಟಿಎಂ ಕಾರ್ಡ್ ಬ್ಲಾಕ್ ಮಾಡಿ,Please block my ATM card,Block the ATM card.,21.36,36.23,0.163
+clip_007.wav,ಪಿನ್ ಬದಲಾಯಿಸಬೇಕು,I need to change my PIN,PIN needs to be changed,10.4,39.59,0.204
+clip_008.wav,ಐದು ಸಾವಿರ ರೂಪಾಯಿ ಹಿಂತೆಗೆದುಕೊಳ್ಳಬೇಕು,I want to withdraw five thousand rupees,Five thousand rupees should be withdrawn.,13.13,64.89,0.225
+clip_009.wav,ನನ್ನ ಮೊಬೈಲ್ ನಂಬರ್ ಬದಲಾಯಿಸಿ,Please update my mobile number,change my mobile number,46.31,56.47,0.149
+clip_010.wav,ಫಿಕ್ಸೆಡ್ ಡಿಪಾಸಿಟ್ ಮಾಡಬೇಕು,I want to open a fixed deposit,Have to make a fixed deposit,27.48,52.5,0.227
+clip_011.wav,ಚೆಕ್ ಬುಕ್ ಬೇಕು,I need a cheque book,Need a checkbook,14.13,44.68,0.179
+clip_012.wav,ಇಂಟರ್ನೆಟ್ ಬ್ಯಾಂಕಿಂಗ್ ಸಕ್ರಿಯಗೊಳಿಸಿ,Please activate internet banking,Enable Internet Banking,0.0,34.4,0.167
+clip_013.wav,ನನ್ನ ಹೆಸರು ಬದಲಾಯಿಸಬೇಕು,I need to update my name,I need to change my name,37.99,53.83,0.197
+clip_014.wav,ಲೋನ್ ಮರುಪಾವತಿ ಎಷ್ಟು,What is my loan repayment amount?,how much is the loan repayment,15.21,46.78,0.245
+clip_015.wav,ನೆರೆಯ ಶಾಖೆ ಎಲ್ಲಿದೆ,Where is the nearest branch?,where is the neighboring branch,19.36,54.1,0.177
+SUMMARY,15 phrases,corpus-level metrics,,18.18,52.19,1.213
