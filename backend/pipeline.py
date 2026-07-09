@@ -25,13 +25,14 @@ Usage
     from backend.pipeline import run_pipeline
 
     result = run_pipeline("data/stt_test_audio/clip_001.wav")
-    print(result["intent"])          # "check_balance"
-    print(result["response_text"])   # "Real-time balance lookup..."
-    # result["audio"] is a (numpy_array, sample_rate) tuple
+    print(result.intent)             # "check_balance"
+    print(result.response_text)      # "Real-time balance lookup..."
+    # result.audio is a (numpy_array, sample_rate) tuple
 """
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -50,12 +51,32 @@ class PipelineResult:
     route:          str = ""       # "informational" or "transactional"
     response_text:  str = ""       # Decision Router output (English)
     audio:          Optional[tuple[np.ndarray, int]] = None  # TTS output
+    audio_output_path: str = ""     # Where the generated wave file was written, if any
     stage_times:    dict = field(default_factory=dict)
     total_time_s:   float = 0.0
     error:          Optional[str] = None
 
 
-def run_pipeline(audio_path: str) -> PipelineResult:
+def _write_audio_to_disk(audio: Optional[tuple[np.ndarray, int]], output_path: str) -> str:
+    """Write a numpy audio tuple to disk as a .wav file and return the saved path."""
+    if audio is None:
+        return ""
+
+    audio_array, sample_rate = audio
+    abs_output_path = os.path.abspath(output_path)
+    os.makedirs(os.path.dirname(abs_output_path), exist_ok=True)
+
+    import soundfile as sf  # noqa: PLC0415
+
+    sf.write(abs_output_path, audio_array, sample_rate)
+    return abs_output_path
+
+
+def run_pipeline(
+    audio_path: str,
+    output_dir: str | None = None,
+    output_name: str | None = None,
+) -> PipelineResult:
     """
     Run the complete voice banking pipeline on a single .wav file.
 
@@ -73,6 +94,10 @@ def run_pipeline(audio_path: str) -> PipelineResult:
         All intermediate and final outputs. Check result.error for failures.
     """
     result = PipelineResult(audio_path=audio_path)
+    default_output_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "data", "tts_output")
+    )
+    output_dir = output_dir or default_output_dir
     t_total = time.perf_counter()
 
     # ── Stage 1: STT ─────────────────────────────────────────────────────────
@@ -154,6 +179,11 @@ def run_pipeline(audio_path: str) -> PipelineResult:
             pass
     result.stage_times["tts"] = round(time.perf_counter() - t0, 2)
 
+    if result.audio is not None:
+        stem = output_name or os.path.splitext(os.path.basename(audio_path))[0]
+        output_path = os.path.join(output_dir, f"{stem}.wav")
+        result.audio_output_path = _write_audio_to_disk(result.audio, output_path)
+
     result.total_time_s = round(time.perf_counter() - t_total, 2)
     return result
 
@@ -181,7 +211,8 @@ if __name__ == "__main__":
         "data/stt_test_audio/clip_007.wav",   # account_info_query
     ]
 
-    os.makedirs("data/tts_output", exist_ok=True)
+    output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "tts_output"))
+    os.makedirs(output_dir, exist_ok=True)
     print("Full pipeline.py multi-run test")
     print("Confirms memory stays flat across repeated calls")
     print("=" * 65)
@@ -192,7 +223,7 @@ if __name__ == "__main__":
         clip_name = os.path.basename(clip_path)
         print("Run " + str(i) + "/4: " + clip_name)
 
-        result = run_pipeline(clip_path)
+        result = run_pipeline(clip_path, output_dir=output_dir, output_name=f"pipeline_run{i}")
 
         if result.error:
             print("  ERROR: " + result.error)
@@ -200,16 +231,18 @@ if __name__ == "__main__":
             safe_resp = result.response_text.encode('ascii', errors='replace').decode('ascii')
             audio_dur = (round(len(result.audio[0]) / result.audio[1], 1)
                          if result.audio else 0)
-            if result.audio:
-                out = "data/tts_output/pipeline_run" + str(i) + ".wav"
-                sf.write(out, result.audio[0], result.audio[1])
+            if result.audio_output_path:
+                out = result.audio_output_path
+            else:
+                out = ""
             print("  intent=" + result.intent +
                   " conf=" + str(round(result.confidence, 2)) +
                   " route=" + result.route)
             print("  response=" + safe_resp[:65] +
                   ("..." if len(safe_resp) > 65 else ""))
             print("  audio=" + str(audio_dur) + "s  total=" +
-                  str(result.total_time_s) + "s  " + str(result.stage_times))
+                  str(result.total_time_s) + "s  " + str(result.stage_times) +
+                  ("  saved=" + out if out else ""))
 
         print("  mem after run: " + gpu_mem())
         print()

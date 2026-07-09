@@ -66,39 +66,15 @@ seaborn>=0.13
 # (no explicit pin needed — pulled in transitively)
 
 # ── TTS Module (Module 5) ──────────────────────────────────────────────────────
-# parler-tts: Parler-TTS model class for description-conditioned synthesis.
+# TTS uses facebook/mms-tts-kan via transformers' native VitsModel.
+# No extra TTS package install is required.
 #
-# ⚠️  INSTALL WARNING — parler-tts 0.2.x has a BROKEN metadata pin:
-#     transformers==4.46.1 (hardcoded in setup.py — this is a bug in the package)
-#
-# Running `pip install parler-tts` or `pip install -r requirements.txt` will
-# SILENTLY DOWNGRADE transformers to 4.46.1, breaking IndicTransToolkit (>=4.51)
-# and the Translation module (which uses `dtype=` introduced in 4.51+).
-#
-# REQUIRED INSTALL COMMAND (use --no-deps to skip the broken constraint):
-#   pip install parler-tts --no-deps
-#
-# This is safe because parler-tts's actual code works correctly on
-# transformers 4.57.x — only its metadata is wrong.
-# After installing with --no-deps, verify: python -c "import transformers; print(transformers.__version__)"
-# should show >=4.51, NOT 4.46.x.
-#
-# DO NOT use: pip install parler-tts            (will downgrade transformers)
-# DO NOT use: pip install -r requirements.txt   (same problem — use setup.sh instead)
-#
-# Model: ai4bharat/indic-parler-tts (GATED — requires HF auth)
-#   Accept terms: https://huggingface.co/ai4bharat/indic-parler-tts
-#   Then: huggingface-cli login
-parler-tts
+# Model: facebook/mms-tts-kan (public, cached from Hugging Face)
+# No parler-tts / no IndicF5 / no Coqui dependency is used.
 
 # sounddevice: optional audio playback for synthesise(..., play=True)
 # Synthesis and file saving work without it — only playback degrades to a no-op.
 sounddevice>=0.4.6
 
-# Ensure transformers stays at >=4.51 AFTER parler-tts install.
-# This line is intentionally repeated from the Shared section — pip's resolver
-# must see this constraint to prevent parler-tts from winning the version conflict.
-# If parler-tts is installed with --no-deps (see above), this line is redundant
-# but harmless. If someone does `pip install parler-tts` directly and then
-# `pip install -r requirements.txt`, this line will trigger an upgrade back.
+# Ensure transformers stays at >=4.51 for the shipped MMS-TTS pipeline.
 transformers>=4.51.0,<5

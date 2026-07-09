@@ -63,7 +63,10 @@ _SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+')
 
 def _detect_device() -> str:
     """Return 'cuda' if a GPU is available, else 'cpu'."""
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    try:
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -120,10 +123,23 @@ class KannadaSpeaker:
         self.sample_rate: int = self._model.config.sampling_rate
 
     def _load_model(self) -> tuple[VitsModel, AutoTokenizer]:
-        model = VitsModel.from_pretrained(self._model_id).to(self._device)
-        model.eval()
-        tokenizer = AutoTokenizer.from_pretrained(self._model_id)
-        return model, tokenizer
+        try:
+            model = VitsModel.from_pretrained(self._model_id).to(self._device)
+            model.eval()
+            tokenizer = AutoTokenizer.from_pretrained(self._model_id)
+            return model, tokenizer
+        except Exception:
+            if self._device == "cpu":
+                raise
+            warnings.warn(
+                f"CUDA TTS initialization failed ({Exception}); falling back to CPU.",
+                stacklevel=2,
+            )
+            self._device = "cpu"
+            model = VitsModel.from_pretrained(self._model_id).to(self._device)
+            model.eval()
+            tokenizer = AutoTokenizer.from_pretrained(self._model_id)
+            return model, tokenizer
 
     def _synthesise_kannada(self, kannada_text: str) -> np.ndarray:
         """

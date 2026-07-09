@@ -15,6 +15,7 @@ Usage
 
 import os
 import time
+import warnings
 
 import numpy as np
 import soundfile as sf
@@ -30,14 +31,14 @@ def _detect_device() -> str:
 
     Importing torch just for device detection is lightweight — the tensor
     runtime itself is not loaded until an actual tensor operation is called.
-    torch is listed as an optional dependency; if it is not installed we
-    fall back silently to CPU.
+    torch is listed as an optional dependency; if it is not installed or its
+    native CUDA runtime is broken, we fall back silently to CPU.
     """
     try:
         import torch  # noqa: PLC0415
 
         return "cuda" if torch.cuda.is_available() else "cpu"
-    except ImportError:
+    except Exception:
         return "cpu"
 
 
@@ -98,12 +99,30 @@ class KannadaTranscriber:
 
         ``faster-whisper`` reads the CTranslate2 model directory directly;
         no additional conversion step is needed at inference time.
+
+        If CUDA initialization fails (for example because the local cuDNN/cuBLAS
+        runtime is incompatible or unavailable), fall back to CPU so the
+        pipeline can still run instead of crashing at import/load time.
         """
-        return WhisperModel(
-            self._model_path,
-            device=self._device,
-            compute_type=self._compute_type,
-        )
+        try:
+            return WhisperModel(
+                self._model_path,
+                device=self._device,
+                compute_type=self._compute_type,
+            )
+        except Exception as exc:
+            if self._device == "cpu":
+                raise
+
+            warnings.warn(
+                f"CUDA STT initialization failed ({exc}); falling back to CPU.",
+                stacklevel=2,
+            )
+            return WhisperModel(
+                self._model_path,
+                device="cpu",
+                compute_type=self._compute_type,
+            )
 
     def transcribe(
         self,

@@ -10,21 +10,12 @@ REM
 REM Usage:  setup.bat
 REM ============================================================================
 
-echo [1/4] Installing base dependencies...
+echo [1/3] Installing base dependencies...
 pip install -r requirements.txt --ignore-requires-python
 
 echo.
-echo [2/4] Installing parler-tts WITHOUT its broken dependency pin...
-pip install parler-tts --no-deps
+echo [2/3] Verifying critical versions...
+python -c "import transformers; print('transformers:', transformers.__version__)"
 
 echo.
-echo [3/4] Restoring transformers to required version (>=4.51)...
-pip install "transformers>=4.51.0,<5" --upgrade
-
-echo.
-echo [4/4] Verifying critical versions...
-python -c "import transformers, parler_tts; print('transformers:', transformers.__version__); print('parler_tts: OK')"
-
-echo.
-echo Setup complete. If transformers shows 4.46.x above, re-run step 3:
-echo   pip install "transformers>=4.51.0,<5" --upgrade
+echo Setup complete.
