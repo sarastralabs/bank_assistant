@@ -253,7 +253,7 @@ def train(args: argparse.Namespace) -> None:
             patience_counter = 0
             model.save_pretrained(output_dir)
             tokenizer.save_pretrained(output_dir)
-            saved_marker = " ← best saved"
+            saved_marker = " <- best saved"
         else:
             patience_counter += 1
             saved_marker = f" (patience {patience_counter}/{args.patience})"
