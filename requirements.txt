@@ -78,3 +78,12 @@ sounddevice>=0.4.6
 
 # Ensure transformers stays at >=4.51 for the shipped MMS-TTS pipeline.
 transformers>=4.51.0,<5
+
+# ── API + Frontend (Voice Banking UI) ─────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+pydub>=0.25.1
+
+# ── Streamlit prototype (optional) ────────────────────────────────────────────
+streamlit>=1.40.0

@@ -39,6 +39,7 @@ by default).  The programmatic API is identical in behaviour to the CLI.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 
@@ -66,7 +67,40 @@ MODELS: dict[str, dict[str, str]] = {
 }
 
 # Files expected in every valid CTranslate2 Whisper output directory.
-_EXPECTED_FILES = ["model.bin", "config.json", "vocabulary.json"]
+_EXPECTED_FILES = ["model.bin", "config.json", "vocabulary.json", "tokenizer.json"]
+
+# Standard Whisper feature-extractor settings (shared across all Whisper sizes).
+_PREPROCESSOR_CONFIG = {
+    "chunk_length": 30,
+    "feature_size": 80,
+    "hop_length": 160,
+    "n_fft": 400,
+    "n_samples": 480000,
+    "nb_max_frames": 3000,
+    "padding_side": "right",
+    "padding_value": 0.0,
+    "sampling_rate": 16000,
+}
+
+
+def _write_offline_assets(hf_id: str, output_dir: str) -> None:
+    """
+    Copy tokenizer assets into the CT2 directory for fully offline inference.
+
+    CTranslate2 conversion produces model.bin + vocabulary.json but not
+    tokenizer.json.  faster-whisper falls back to HuggingFace Hub for the
+    tokenizer when it is missing, which breaks offline mode (HF_HUB_OFFLINE=1).
+    """
+    from transformers import AutoTokenizer
+
+    print("  Writing tokenizer.json for offline inference ...")
+    tokenizer = AutoTokenizer.from_pretrained(hf_id)
+    tokenizer.save_pretrained(output_dir)
+
+    preprocessor_path = os.path.join(output_dir, "preprocessor_config.json")
+    if not os.path.isfile(preprocessor_path):
+        with open(preprocessor_path, "w", encoding="utf-8") as f:
+            json.dump(_PREPROCESSOR_CONFIG, f, indent=2)
 
 
 def convert_model(model_key: str) -> None:
@@ -121,6 +155,15 @@ def convert_model(model_key: str) -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    try:
+        _write_offline_assets(hf_id, output_dir)
+    except Exception as exc:
+        print(
+            f"\n[WARNING] Could not write offline tokenizer assets for '{model_key}':\n  {exc}\n"
+            "          STT may fail in offline mode without tokenizer.json in the model directory.",
+            file=sys.stderr,
+        )
 
     # --- Verify expected output files ---
     missing = [

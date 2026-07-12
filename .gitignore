@@ -14,6 +14,8 @@ models/nlu-distilbert/
 # ── Audio files (too large) ────────────────────────────────────────────────────
 data/stt_test_audio/*.wav
 data/tts_output/
+data/history.db
+data/history_audio/
 
 # ── Python cache ────────────────────────────────────────────────────────────────
 __pycache__/
@@ -28,6 +30,8 @@ env/
 # ── Output files ────────────────────────────────────────────────────────────────
 benchmark_results.csv
 translation_benchmark_results.csv
+benchmark_results_*.csv
+tmp_*.py
 
 # ── IDE / OS ────────────────────────────────────────────────────────────────────
 .vscode/
@@ -37,3 +41,7 @@ Thumbs.db
 
 # ── Streamlit ────────────────────────────────────────────────────────────────────
 .streamlit/
+
+# ── Frontend ─────────────────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
