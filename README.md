@@ -42,6 +42,30 @@ Optional: [ffmpeg](https://ffmpeg.org/) on PATH (helps browser `.webm` conversio
 
 ## Full setup (do these in order)
 
+### Fast path on a new Windows PC (recommended)
+
+Copy the project folder to the new machine, then run **one** command from the project root:
+
+```bat
+scripts\setup_new_pc.bat
+```
+
+Or:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_new_pc.ps1
+```
+
+The script checks Python + Node, creates `.venv`, installs packages, walks you through HuggingFace login, downloads/converts all models, and runs `npm install`.
+
+**Before / during the script you must still:**
+
+1. Accept licenses on both IndicTrans2 model pages (browser)
+2. Paste your HuggingFace Read token when asked
+3. Install [MSVC Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) if IndicTransToolkit fails to compile
+
+Manual step-by-step follows if you prefer not to use the script.
+
 ### 1. Clone / open the project
 
 ```bash
