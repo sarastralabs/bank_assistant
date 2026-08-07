@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.history import init_db
-from api.routes import history, landing, pipeline
+from api.routes import forms, history, landing, pipeline
 
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -35,6 +35,7 @@ app.add_middleware(
 app.include_router(pipeline.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
 app.include_router(landing.router, prefix="/api")
+app.include_router(forms.router, prefix="/api")
 
 
 @app.on_event("startup")

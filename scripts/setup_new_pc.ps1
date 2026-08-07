@@ -69,15 +69,46 @@ if (-not $py) {
 $verText = & $py --version 2>&1
 Ok $verText
 
-# Require 3.10+
+# Require 3.10-3.12. Newer versions lack prebuilt wheels for av/torch/ctranslate2,
+# which forces slow source builds that need a full C/C++ toolchain.
 $m = [regex]::Match("$verText", "Python (\d+)\.(\d+)")
 if ($m.Success) {
     $major = [int]$m.Groups[1].Value
     $minor = [int]$m.Groups[2].Value
+
     if ($major -lt 3 -or ($major -eq 3 -and $minor -lt 10)) {
-        Fail "Need Python 3.10+ (3.12 recommended). Found: $verText"
+        Fail "Need Python 3.10-3.12 (3.12 recommended). Found: $verText"
+    }
+
+    if ($major -eq 3 -and $minor -gt 12) {
+        # Try to find a supported interpreter via the py launcher
+        $alt = $null
+        foreach ($want in @("3.12", "3.11", "3.10")) {
+            try {
+                & py "-$want" --version *> $null
+                if ($LASTEXITCODE -eq 0) { $alt = $want; break }
+            } catch { }
+        }
+        if ($alt) {
+            Write-Host "  $verText has no prebuilt ML wheels; switching to Python $alt" -ForegroundColor Yellow
+            $py = "py"
+            $script:PyArgs = @("-$alt")
+            Ok "Using Python $alt via py launcher"
+        } else {
+            Fail @"
+$verText is too new. Packages like av, torch and ctranslate2 have no prebuilt
+wheels for it, so pip compiles them from source and fails.
+
+Install Python 3.12 from:
+  https://www.python.org/downloads/release/python-31210/
+
+Then delete the old venv and re-run this script:
+  Remove-Item .venv -Recurse -Force
+"@
+        }
     }
 }
+if (-not $script:PyArgs) { $script:PyArgs = @() }
 
 # --------------------------------------------------------------------------
 # STEP 2 — Node.js
@@ -108,13 +139,22 @@ $venvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $venvPip = Join-Path $ProjectRoot ".venv\Scripts\pip.exe"
 
 if (-not (Test-Path $venvPython)) {
-    & $py -m venv .venv
+    & $py @($script:PyArgs) -m venv .venv
     if (-not (Test-Path $venvPython)) {
         Fail "Failed to create .venv"
     }
     Ok "Created .venv"
 } else {
-    Ok ".venv already exists"
+    $existing = & $venvPython --version 2>&1
+    Ok ".venv already exists ($existing)"
+    $vm = [regex]::Match("$existing", "Python 3\.(\d+)")
+    if ($vm.Success -and [int]$vm.Groups[1].Value -gt 12) {
+        Fail @"
+Existing .venv uses $existing, which has no prebuilt ML wheels.
+Delete it and re-run this script:
+  Remove-Item .venv -Recurse -Force
+"@
+    }
 }
 
 # Always use venv python/pip — avoids Activate.ps1 execution-policy issues
@@ -194,18 +234,19 @@ if ($tokenOk) {
     Ok "HuggingFace token already configured"
 } else {
     Write-Host "  Logging in (paste your HF token when asked)..." -ForegroundColor Yellow
-    $hfCli = Join-Path $ProjectRoot ".venv\Scripts\huggingface-cli.exe"
+    # huggingface_hub >=1.0 ships `hf`; older versions ship `huggingface-cli`
     $hfExe = Join-Path $ProjectRoot ".venv\Scripts\hf.exe"
-    if (Test-Path $hfCli) {
-        & $hfCli login
-    } elseif (Test-Path $hfExe) {
+    $hfCli = Join-Path $ProjectRoot ".venv\Scripts\huggingface-cli.exe"
+    if (Test-Path $hfExe) {
         & $hfExe auth login
+    } elseif (Test-Path $hfCli) {
+        & $hfCli login
     } else {
         VPip install -U "huggingface_hub[cli]"
-        if (Test-Path $hfCli) {
-            & $hfCli login
+        if (Test-Path $hfExe) {
+            & $hfExe auth login
         } else {
-            Fail "huggingface-cli not found after install. Run: .\.venv\Scripts\pip.exe install -U huggingface_hub[cli]"
+            Fail "HuggingFace CLI not found. Run: .\.venv\Scripts\pip.exe install -U huggingface_hub[cli], then: .\.venv\Scripts\hf.exe auth login"
         }
     }
 }
@@ -217,7 +258,7 @@ for m in ['ai4bharat/indictrans2-indic-en-dist-200M', 'ai4bharat/indictrans2-en-
     print('OK:', model_info(m).id)
 "@
 if ($LASTEXITCODE -ne 0) {
-    Fail "Cannot access IndicTrans2 models. Accept licenses in the browser and run: .\.venv\Scripts\python.exe -m huggingface_hub.commands.huggingface_cli login"
+    Fail "Cannot access IndicTrans2 models. Accept licenses in the browser and run: .\.venv\Scripts\hf.exe auth login"
 }
 Ok "Gated IndicTrans2 access verified"
 

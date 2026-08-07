@@ -1,3 +1,6 @@
+import { normalizeSpokenNumber } from "../utils/kannadaNumbers";
+import { normalizeDepositMode, transliterateKannadaToEnglish } from "../utils/kannadaText";
+
 export interface PipelineResult {
   kannada_text: string;
   english_text: string;
@@ -51,7 +54,7 @@ export interface LandingData {
   }>;
 }
 
-const API_BASE = "";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
 export async function checkHealth(): Promise<boolean> {
   try {
@@ -140,4 +143,109 @@ export function formatHistoryTime(iso: string): string {
 
 export function formatIntentLabel(intent: string): string {
   return intent.replace(/_/g, " ");
+}
+
+export interface FormField {
+  id: string;
+  label_kn: string;
+  label_en: string;
+  prompt_kn: string;
+  type: "text" | "digits" | "amount" | "date";
+  required: boolean;
+  /** If set, field is filled automatically and not asked by voice. */
+  auto?: "today" | null;
+}
+
+export interface FormSummary {
+  id: string;
+  title_kn: string;
+  title_en: string;
+  description_kn: string;
+  description_en: string;
+  field_count: number;
+}
+
+export interface FormCatalog {
+  disclaimer_kn: string;
+  disclaimer_en: string;
+  forms: FormSummary[];
+}
+
+export interface BankForm {
+  id: string;
+  title_kn: string;
+  title_en: string;
+  description_kn: string;
+  description_en: string;
+  fields: FormField[];
+  disclaimer_kn: string;
+  disclaimer_en: string;
+}
+
+export async function fetchFormCatalog(): Promise<FormCatalog> {
+  const res = await fetch(`${API_BASE}/api/forms`);
+  if (!res.ok) throw new Error("Failed to load forms");
+  return res.json();
+}
+
+export async function fetchForm(formId: string): Promise<BankForm> {
+  const res = await fetch(`${API_BASE}/api/forms/${formId}`);
+  if (!res.ok) throw new Error("Failed to load form");
+  return res.json();
+}
+
+export async function transcribeFormAudio(
+  audioBlob: Blob,
+  filename = "field.webm",
+): Promise<string> {
+  const formData = new FormData();
+  formData.append("audio", audioBlob, filename);
+
+  const res = await fetch(`${API_BASE}/api/forms/transcribe`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let detail = `Transcription failed (${res.status})`;
+    try {
+      const err = await res.json();
+      detail = err.detail ?? detail;
+    } catch {
+      // keep default
+    }
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+
+  const data = await res.json();
+  return (data.text ?? "").trim();
+}
+
+/**
+ * Clean / convert STT text for a form field into English-form values.
+ * - digits / amount → Arabic numerals from Kannada number words
+ * - name / text → Kannada script transliterated to English letters
+ * - deposit_mode → Cash / Cheque when recognized
+ */
+export function normalizeFormValue(
+  raw: string,
+  type: FormField["type"],
+  fieldId?: string,
+): string {
+  const text = raw.trim();
+  if (!text) return "";
+
+  if (type === "digits" || type === "amount" || type === "date") {
+    return normalizeSpokenNumber(text, type);
+  }
+
+  if (fieldId === "deposit_mode") {
+    return normalizeDepositMode(text);
+  }
+
+  if (fieldId === "full_name" || type === "text") {
+    return transliterateKannadaToEnglish(text);
+  }
+
+  return text;
 }

@@ -9,10 +9,11 @@ import {
 interface LandingPageProps {
   onStartAssist: () => void;
   onOpenHistory: () => void;
+  onOpenForms: () => void;
   refreshKey: number;
 }
 
-export function LandingPage({ onStartAssist, onOpenHistory, refreshKey }: LandingPageProps) {
+export function LandingPage({ onStartAssist, onOpenHistory, onOpenForms, refreshKey }: LandingPageProps) {
   const [data, setData] = useState<LandingData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,6 +46,9 @@ export function LandingPage({ onStartAssist, onOpenHistory, refreshKey }: Landin
           <div className="landing-cta">
             <button type="button" className="primary-btn" onClick={onStartAssist}>
               Start voice assist
+            </button>
+            <button type="button" className="secondary-btn" onClick={onOpenForms}>
+              Fill a form · ಅರ್ಜಿ
             </button>
             <button type="button" className="secondary-btn" onClick={onOpenHistory}>
               View history

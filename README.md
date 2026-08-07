@@ -28,7 +28,7 @@ Supported intents: how to check balance, apply for loan, open account, deposit, 
 
 | Item | Notes |
 |------|--------|
-| **Python** | 3.12+ recommended |
+| **Python** | **3.12 recommended.** Avoid 3.13/3.14 — `av`, `torch`, and `ctranslate2` have no prebuilt wheels there and pip will try to compile them from source |
 | **Node.js** | 18+ (for the frontend) |
 | **Disk** | ~4–6 GB free for models + HF cache |
 | **RAM** | 8 GB minimum; 16 GB comfortable |
@@ -161,37 +161,63 @@ STT / TTS models used below are public (no license click required).
 #### 5c. Create an access token
 
 1. Go to https://huggingface.co/settings/tokens  
-2. Create a token with **Read** access  
-3. Copy it
+2. Create a token of type **Read** — not *Fine-grained*. Fine-grained tokens omit gated-repo access by default and can crash `hf auth login` with `KeyError: 'accessToken'`.  
+3. Copy it. A real token starts with `hf_` and is about 37 characters long.
+
+Every command below writes `<YOUR_TOKEN>` — replace that with the value you just copied. Saving the literal placeholder text produces a stored-but-invalid token, and every gated download then fails with a confusing `401 Unauthorized`.
 
 #### 5d. Log in on this machine
 
 ```bash
-huggingface-cli login
+hf auth login
 ```
 
 Paste the token when prompted.
+
+On older `huggingface_hub` versions (< 1.0) the command is `huggingface-cli login` instead. If `hf` is missing: `pip install -U "huggingface_hub[cli]"`.
+
+If `hf auth login` errors out, save the token directly instead:
+
+```bash
+python -c "from huggingface_hub import HfFolder; HfFolder.save_token('<YOUR_TOKEN>')"
+```
 
 Or set an env var for the current session:
 
 ```bash
 # Windows PowerShell
-$env:HF_TOKEN="hf_xxxxxxxxxxxxxxxxxxxx"
+$env:HF_TOKEN="<YOUR_TOKEN>"
 
 # Windows CMD
-set HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
+set HF_TOKEN=<YOUR_TOKEN>
 
 # Linux / macOS
-export HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
+export HF_TOKEN=<YOUR_TOKEN>
 ```
 
 #### 5e. Verify gated access
+
+First confirm the token itself is valid — this must print your HuggingFace username:
+
+```bash
+python -c "from huggingface_hub import whoami; print(whoami()['name'])"
+```
+
+If it raises `Invalid user token`, the stored token is wrong or was pasted incompletely. Inspect what is actually saved:
+
+```bash
+python -c "from huggingface_hub import get_token; t=get_token(); print('len:', len(t) if t else None)"
+```
+
+A length of 23 means the placeholder was saved verbatim — redo step 5d with your real token.
+
+Then confirm access to the gated repos:
 
 ```bash
 python -c "from huggingface_hub import model_info; print(model_info('ai4bharat/indictrans2-indic-en-dist-200M').id); print(model_info('ai4bharat/indictrans2-en-indic-dist-200M').id)"
 ```
 
-Both lines should print the model IDs. If you get `GatedRepoError`, re-check license acceptance and login.
+Both lines should print the model IDs. If you get `GatedRepoError` while `whoami` works, the licenses in step 5b were not accepted on that account.
 
 ### 6. Download / prepare ML models (one-time, needs internet)
 
@@ -358,9 +384,12 @@ Opens http://localhost:8501
 
 | Problem | Fix |
 |---------|-----|
+| `Failed building wheel for av` (and torch/ctranslate2) | You are on Python 3.13+. Install Python 3.12, then `Remove-Item .venv -Recurse -Force` and `py -3.12 -m venv .venv` |
 | `Microsoft Visual C++ 14.0 required` | Install VS Build Tools + C++ workload; restart terminal; re-run `setup.bat` |
 | `IndicTransToolkit` / Cython build fails | `pip install Cython numpy setuptools` then `pip install IndicTransToolkit --no-build-isolation` |
-| `GatedRepoError` / 401 on IndicTrans2 | Accept licenses on HF website + `huggingface-cli login` |
+| `GatedRepoError` / 401 on IndicTrans2 | Accept licenses on HF website + `hf auth login`. Verify with `whoami` (step 5e) before retrying |
+| `Invalid user token` from `whoami` | Stored token is a placeholder or was truncated. Re-save a real **Read** token (step 5d) |
+| `huggingface-cli is deprecated and no longer works` | Use `hf auth login` (new CLI name in huggingface_hub 1.x) |
 | `Model directory not found ... whisper-medium-vaani-ct2` | `python backend/stt/convert_models.py --model specialized` |
 | STT Hub / tokenizer offline error | Re-run STT convert (writes `tokenizer.json`) |
 | `NLU model checkpoint not found` | `PYTHONPATH=. python backend/nlu/train.py` |
