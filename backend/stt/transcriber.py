@@ -177,6 +177,9 @@ class KannadaTranscriber:
             beam_size=beam_size,
             vad_filter=True,     # Built-in VAD removes silence padding automatically
             word_timestamps=False,
+            # Bias decoder toward Kannada script (not Romanized Latin) on short clips
+            initial_prompt="ಕನ್ನಡದಲ್ಲಿ ಮಾತನಾಡಿ. ಹೆಸರು, ಖಾತೆ ಸಂಖ್ಯೆ, ಮೊತ್ತ.",
+            condition_on_previous_text=False,
         )
 
         # Segments are a lazy generator — iterate to materialise them

@@ -5,11 +5,12 @@ import { PipelineProgress } from "./components/PipelineProgress";
 import { ResultPanel } from "./components/ResultPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { LandingPage } from "./components/LandingPage";
+import { FormsPanel } from "./components/FormsPanel";
 import { useAudioRecorder } from "./hooks/useAudioRecorder";
 import { usePipeline } from "./hooks/usePipeline";
 
 type AppView = "idle" | "recording" | "processing" | "result" | "error";
-type Tab = "home" | "assist" | "history";
+type Tab = "home" | "assist" | "forms" | "history";
 
 export default function App() {
   const { state: recorderState, error: recorderError, startRecording, stopRecording } =
@@ -22,7 +23,25 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    checkHealth().then(setApiOnline);
+    let cancelled = false;
+    let attempts = 0;
+
+    const probe = () => {
+      checkHealth().then((ok) => {
+        if (cancelled) return;
+        setApiOnline(ok);
+        // Retry a few times if the API was still starting when the page loaded
+        if (!ok && attempts < 10) {
+          attempts += 1;
+          window.setTimeout(probe, 1500);
+        }
+      });
+    };
+
+    probe();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -83,7 +102,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
+      <header className="topbar no-print">
         <button type="button" className="brand brand-btn" onClick={() => setTab("home")}>
           <span className="brand-mark">KB</span>
           <div>
@@ -108,6 +127,13 @@ export default function App() {
           </button>
           <button
             type="button"
+            className={`tab ${tab === "forms" ? "active" : ""}`}
+            onClick={() => setTab("forms")}
+          >
+            Forms
+          </button>
+          <button
+            type="button"
             className={`tab ${tab === "history" ? "active" : ""}`}
             onClick={() => setTab("history")}
           >
@@ -116,9 +142,11 @@ export default function App() {
         </nav>
       </header>
 
-      <div className={`app ${tab === "home" ? "app-wide" : ""}`}>
+      <div className={`app ${tab === "home" || tab === "forms" ? "app-wide" : ""}`}>
         {apiOnline === false && (
-          <p className="api-warning">API offline — start the backend with uvicorn on port 8000.</p>
+          <p className="api-warning no-print">
+            API offline — start the backend with uvicorn on port 8000.
+          </p>
         )}
 
         {tab === "home" && (
@@ -127,6 +155,7 @@ export default function App() {
               refreshKey={historyRefresh}
               onStartAssist={() => setTab("assist")}
               onOpenHistory={() => setTab("history")}
+              onOpenForms={() => setTab("forms")}
             />
           </main>
         )}
@@ -139,9 +168,7 @@ export default function App() {
                 Record a question and get spoken guidance on what to do next (branch, ATM, forms).
                 We do not fetch your real balance or any personal bank details.
               </p>
-              <p className="info-banner">
-                Informational only — no live account access.
-              </p>
+              <p className="info-banner">Informational only — no live account access.</p>
             </header>
 
             <main className="main">
@@ -202,6 +229,12 @@ export default function App() {
               )}
             </main>
           </>
+        )}
+
+        {tab === "forms" && (
+          <main className="main">
+            <FormsPanel apiOnline={apiOnline} />
+          </main>
         )}
 
         {tab === "history" && (

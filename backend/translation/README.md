@@ -29,13 +29,16 @@ and click **"Agree and access repository"**:
 ### Step 2 — Create a HuggingFace access token
 
 Go to [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-and create a token with at least **Read** access.
+and create a token of type **Read** (not *Fine-grained*).
+
+Replace `<YOUR_TOKEN>` below with the real value — it starts with `hf_` and is about 37
+characters. Storing the placeholder text yields a token that exists but fails with `401`.
 
 ### Step 3 — Log in on your machine
 
 ```bash
 pip install huggingface_hub   # already in requirements.txt
-huggingface-cli login
+hf auth login                 # `huggingface-cli login` on huggingface_hub < 1.0
 # Paste your token when prompted
 ```
 
@@ -43,10 +46,16 @@ Or set the environment variable directly (useful for CI / shared machines):
 
 ```bash
 # Windows
-set HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
+set HF_TOKEN=<YOUR_TOKEN>
 
 # Linux / macOS
-export HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
+export HF_TOKEN=<YOUR_TOKEN>
+```
+
+Confirm it worked before continuing — this should print your username:
+
+```bash
+python -c "from huggingface_hub import whoami; print(whoami()['name'])"
 ```
 
 ### Step 4 — Verify access before running the module

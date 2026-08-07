@@ -1,0 +1,106 @@
+{
+  "disclaimer_kn": "ಇದು ಪ್ರಾತ್ಯಕ್ಷಿಕೆ ಅರ್ಜಿ ಮಾತ್ರ — ಅಧಿಕೃತ ಬ್ಯಾಂಕ್ ದಾಖಲೆ ಅಲ್ಲ. ನಿಜವಾದ ಖಾತೆ ವಹಿವಾಟು ನಡೆಯುವುದಿಲ್ಲ.",
+  "disclaimer_en": "Demo form only — not an official bank document. No live account transaction.",
+  "forms": [
+    {
+      "id": "cash_withdrawal",
+      "title_kn": "ನಗದು ಹಿಂಪಡೆಯುವ ಅರ್ಜಿ",
+      "title_en": "Cash withdrawal form",
+      "description_kn": "ಖಾತೆಯಿಂದ ನಗದು ಹಿಂಪಡೆಯಲು ಅಗತ್ಯವಿರುವ ವಿವರಗಳನ್ನು ಧ್ವನಿಯಿಂದ ಭರ್ತಿ ಮಾಡಿ.",
+      "description_en": "Fill withdrawal details by speaking each field.",
+      "fields": [
+        {
+          "id": "full_name",
+          "label_kn": "ಪೂರ್ಣ ಹೆಸರು",
+          "label_en": "Full name",
+          "prompt_kn": "ದಯವಿಟ್ಟು ನಿಮ್ಮ ಪೂರ್ಣ ಹೆಸರನ್ನು ಹೇಳಿ",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "account_number",
+          "label_kn": "ಖಾತೆ ಸಂಖ್ಯೆ",
+          "label_en": "Account number",
+          "prompt_kn": "ದಯವಿಟ್ಟು ನಿಮ್ಮ ಖಾತೆ ಸಂಖ್ಯೆಯನ್ನು ಹೇಳಿ",
+          "type": "digits",
+          "required": true
+        },
+        {
+          "id": "amount",
+          "label_kn": "ಮೊತ್ತ (ರೂ.)",
+          "label_en": "Amount (₹)",
+          "prompt_kn": "ಹಿಂಪಡೆಯುವ ಮೊತ್ತವನ್ನು ಹೇಳಿ",
+          "type": "amount",
+          "required": true
+        },
+        {
+          "id": "date",
+          "label_kn": "ದಿನಾಂಕ",
+          "label_en": "Date",
+          "prompt_kn": "",
+          "type": "date",
+          "required": true,
+          "auto": "today"
+        },
+        {
+          "id": "purpose",
+          "label_kn": "ಉದ್ದೇಶ (ಐಚ್ಛಿಕ)",
+          "label_en": "Purpose (optional)",
+          "prompt_kn": "ಉದ್ದೇಶವನ್ನು ಹೇಳಿ. ಇಲ್ಲದಿದ್ದರೆ ಬಿಟ್ಟುಬಿಡಿ ಎಂದು ಹೇಳಿ",
+          "type": "text",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "cash_deposit",
+      "title_kn": "ನಗದು ಠೇವಣಿ ಅರ್ಜಿ",
+      "title_en": "Cash deposit form",
+      "description_kn": "ಖಾತೆಗೆ ನಗದು ಠೇವಣಿ ಮಾಡಲು ಅಗತ್ಯವಿರುವ ವಿವರಗಳನ್ನು ಧ್ವನಿಯಿಂದ ಭರ್ತಿ ಮಾಡಿ.",
+      "description_en": "Fill deposit details by speaking each field.",
+      "fields": [
+        {
+          "id": "full_name",
+          "label_kn": "ಪೂರ್ಣ ಹೆಸರು",
+          "label_en": "Full name",
+          "prompt_kn": "ದಯವಿಟ್ಟು ನಿಮ್ಮ ಪೂರ್ಣ ಹೆಸರನ್ನು ಹೇಳಿ",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "account_number",
+          "label_kn": "ಖಾತೆ ಸಂಖ್ಯೆ",
+          "label_en": "Account number",
+          "prompt_kn": "ದಯವಿಟ್ಟು ನಿಮ್ಮ ಖಾತೆ ಸಂಖ್ಯೆಯನ್ನು ಹೇಳಿ",
+          "type": "digits",
+          "required": true
+        },
+        {
+          "id": "amount",
+          "label_kn": "ಮೊತ್ತ (ರೂ.)",
+          "label_en": "Amount (₹)",
+          "prompt_kn": "ಠೇವಣಿ ಮೊತ್ತವನ್ನು ಹೇಳಿ",
+          "type": "amount",
+          "required": true
+        },
+        {
+          "id": "deposit_mode",
+          "label_kn": "ಠೇವಣಿ ವಿಧಾನ",
+          "label_en": "Deposit mode",
+          "prompt_kn": "ನಗದು ಅಥವಾ ಚೆಕ್ ಎಂದು ಹೇಳಿ",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "date",
+          "label_kn": "ದಿನಾಂಕ",
+          "label_en": "Date",
+          "prompt_kn": "",
+          "type": "date",
+          "required": true,
+          "auto": "today"
+        }
+      ]
+    }
+  ]
+}
