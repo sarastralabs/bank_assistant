@@ -2,25 +2,26 @@
 
 from __future__ import annotations
 
-import json
-import os
-import subprocess
 import sys
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from api.audio import audio_bytes_to_wav, safe_unlink
 from api import history as history_store
+from backend.pipeline_bridge import (
+    fill_field,
+    oneshot_fill,
+    oneshot_process,
+    process_wav,
+    worker_enabled,
+)
 
 router = APIRouter()
-
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SUBPROCESS_SCRIPT = os.path.join(PROJECT_ROOT, "run_pipeline_subprocess.py")
 
 
 @router.post("/process-audio")
 async def process_audio(audio: UploadFile = File(...)) -> dict:
-    """Accept audio upload, run pipeline in subprocess, return JSON result."""
+    """Accept audio upload, run pipeline (warm worker by default), return JSON."""
     if not audio.filename:
         raise HTTPException(status_code=400, detail="No audio file provided")
 
@@ -35,34 +36,19 @@ async def process_audio(audio: UploadFile = File(...)) -> dict:
         raise HTTPException(status_code=400, detail=f"Audio conversion failed: {exc}") from exc
 
     try:
-        proc = subprocess.run(
-            [sys.executable, SUBPROCESS_SCRIPT, tmp_wav],
-            capture_output=True,
-            text=True,
-            cwd=PROJECT_ROOT,
-            env={
-                **os.environ,
-                "TRANSFORMERS_OFFLINE": "1",
-                "HF_HUB_OFFLINE": "1",
-                "HF_DATASETS_OFFLINE": "1",
-            },
-        )
+        if worker_enabled():
+            try:
+                result = process_wav(tmp_wav)
+            except Exception as warm_exc:
+                # Fall back once to cold subprocess if worker crashed mid-flight
+                print(f"[pipeline] warm worker failed, oneshot fallback: {warm_exc}", file=sys.stderr)
+                result = oneshot_process(tmp_wav)
+        else:
+            result = oneshot_process(tmp_wav)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {exc}") from exc
     finally:
         safe_unlink(tmp_wav)
-
-    if proc.returncode != 0:
-        stderr = proc.stderr.strip() or "Unknown subprocess error"
-        raise HTTPException(status_code=500, detail=f"Pipeline subprocess failed: {stderr}")
-
-    try:
-        result = json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Invalid pipeline output: {proc.stdout[:200]}",
-        ) from exc
 
     # Persist successful turns for product history (non-fatal if save fails)
     if not result.get("error"):
@@ -70,7 +56,6 @@ async def process_audio(audio: UploadFile = File(...)) -> dict:
             saved = history_store.save_query(result)
             result["history_id"] = saved["id"]
         except Exception as exc:
-            # Keep the pipeline response even if history persistence fails
             print(f"[history] save failed: {exc}", file=sys.stderr)
             result["history_id"] = None
 

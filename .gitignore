@@ -15,6 +15,8 @@ models/nlu-distilbert/
 data/stt_test_audio/*.wav
 data/tts_output/
 data/history.db
+data/kiosk_greeting.wav
+data/greetings/
 data/history_audio/
 
 # ── Python cache ────────────────────────────────────────────────────────────────
@@ -25,6 +27,7 @@ dist/
 build/
 .venv/
 venv/
+.venv-parler/
 env/
 
 # ── Output files ────────────────────────────────────────────────────────────────

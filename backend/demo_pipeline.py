@@ -7,7 +7,9 @@ End-to-end demonstration of the voice banking assistant pipeline:
         → STT           (Whisper, specialized model)
         → Translation   (IndicTrans2 Kannada → English)
         → NLU           (fine-tuned DistilBERT intent classifier)
-        → Decision Router (deterministic routing + response)
+        → Decision Router (deterministic routing + English response_text)
+        → synthesise(response_text)
+              internally: split sentences → translate_en_to_kn() → MMS-TTS → audio
 
 Usage
 -----

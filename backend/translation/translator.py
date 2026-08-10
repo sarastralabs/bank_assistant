@@ -125,11 +125,14 @@ class IndicTranslator:
             self._model_name,
             trust_remote_code=True,
         )
+        # IndicTrans2 custom code rejects `dtype=` kwarg on __init__.
+        # Load weights first, then cast/move — avoids transformers version skew.
         model = AutoModelForSeq2SeqLM.from_pretrained(
             self._model_name,
             trust_remote_code=True,
-            dtype=self._torch_dtype,
-        ).to(self._device)
+        )
+        # IndicTrans2 custom code rejects `dtype=` on from_pretrained/__init__.
+        model = model.to(device=self._device, dtype=self._torch_dtype)
         model.eval()   # disable dropout; no effect on output but good practice
         return tokenizer, model
 

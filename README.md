@@ -338,11 +338,12 @@ The API runs with `HF_HUB_OFFLINE=1` so inference uses local caches only. If a m
 
 ```
 bank_assistant/
-├── api/                 FastAPI (process-audio, history, landing)
-├── backend/             STT, translation, NLU, router, TTS, pipeline
-├── frontend/            React + Vite UI
+├── api/                 FastAPI (process-audio, history, landing, forms, kiosk)
+├── backend/             STT, translation, NLU, router, TTS, forms, pipeline
+├── frontend/            React + Vite UI (Admin · Agent kiosk · Desk)
 ├── data/
 │   ├── bank_info.json   Static guidance / sample rates
+│   ├── forms.json       Voice-fill bank form schemas
 │   ├── nlu_training_data.json
 │   ├── history.db       Query history (created at runtime)
 │   └── history_audio/   Saved response WAVs
@@ -350,9 +351,23 @@ bank_assistant/
 ├── scripts/dev.bat
 ├── run_pipeline_subprocess.py
 ├── setup.bat
-├── requirements.txt
-└── app.py               Optional Streamlit prototype
+└── requirements.txt
 ```
+
+---
+
+## UI entry points
+
+Open http://127.0.0.1:5173 then choose:
+
+| Route | URL hash | Purpose |
+|-------|----------|---------|
+| Home | `#/` | Portal — Admin / Agent / Desk |
+| Admin | `#/admin` | Start/stop lobby agent, session list |
+| Agent | `#/agent` | Full-screen kiosk (camera → greet → conversation) |
+| Desk | `#/desk` | Assist + Forms + History (testing without kiosk) |
+
+**Typical demo:** Admin → **Start agent** → open Agent on the lobby screen → customer stands in front of camera.
 
 ---
 
@@ -367,16 +382,16 @@ bank_assistant/
 | GET | `/api/history/{id}` | One query including response audio |
 | DELETE | `/api/history/{id}` | Delete one query |
 | DELETE | `/api/history` | Clear all history |
-
----
-
-## Optional: Streamlit UI
-
-```bash
-python -m streamlit run app.py
-```
-
-Opens http://localhost:8501
+| GET | `/api/forms` | Voice-fill form catalog |
+| GET | `/api/forms/{id}` | One form schema |
+| POST | `/api/forms/fill-field` | Kannada speech → English field value (STT + IndicTrans2) |
+| GET | `/api/kiosk/status` | Agent kiosk status |
+| POST | `/api/kiosk/start` | Admin starts agent |
+| POST | `/api/kiosk/stop` | Admin stops agent |
+| POST | `/api/kiosk/presence` | Camera presence report |
+| POST | `/api/kiosk/session/begin` | Start customer session |
+| POST | `/api/kiosk/session/phase` | Set phase idle/greeting/conversation |
+| POST | `/api/kiosk/session/end` | End customer session |
 
 ---
 

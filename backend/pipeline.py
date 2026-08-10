@@ -5,17 +5,27 @@ Sequential pipeline: Kannada audio -> Kannada + English text + spoken Kannada re
 
 Memory management
 -----------------
-Each model is loaded, used, then explicitly unloaded before the next model
-loads. This ensures peak memory never exceeds the cost of ONE heavy model,
-preventing the Windows access violation (exit -1073740791) that occurs when
-all four models load simultaneously.
+By default each model is loaded, used, then unloaded (low peak RAM).
+
+Set BANK_PIPELINE_KEEP_LOADED=1 (used by the warm pipeline worker) to keep
+models resident across turns — much lower latency after the first request.
 
 Pipeline stages:
     1. STT        load -> transcribe -> UNLOAD
-    2. Translation load -> translate -> UNLOAD
+    2. Translation load -> translate_kn_to_en -> UNLOAD
     3. NLU + Router  load -> classify + route (kept together, both lightweight once loaded)
                             -> UNLOAD NLU
-    4. TTS        load -> synthesise -> UNLOAD
+    4. TTS        load -> synthesise(response_text) -> UNLOAD
+                  Router returns English response_text; pipeline.py passes it to
+                  synthesise() as-is. MMS-TTS (facebook/mms-tts-kan) is Kannada-only,
+                  so translation does NOT happen in this file — it happens inside
+                  synthesise() (backend/tts/speaker.py):
+                      Router (English response_text)
+                          -> synthesise()
+                              split sentences
+                              -> translate_en_to_kn() per sentence
+                              -> MMS-TTS
+                              -> audio
 
 Each stage's model is guaranteed gone before the next stage loads.
 The router has no model, so it costs nothing.
@@ -50,6 +60,8 @@ class PipelineResult:
     confidence:     float = 0.0    # NLU confidence
     route:          str = ""       # "informational" or "transactional"
     response_text:  str = ""       # Decision Router output (English)
+    required_fields: list = field(default_factory=list)  # transactional only
+    form_id:        str = ""       # voice-fill form id when transactional
     audio:          Optional[tuple[np.ndarray, int]] = None  # TTS output
     audio_output_path: str = ""     # Where the generated wave file was written, if any
     stage_times:    dict = field(default_factory=dict)
@@ -92,6 +104,10 @@ def run_pipeline(
     -------
     PipelineResult
         All intermediate and final outputs. Check result.error for failures.
+        ``response_text`` is English (from the Decision Router).
+        ``audio`` is Kannada speech: ``synthesise()`` translates En→Kn
+        internally (split sentences → ``translate_en_to_kn()`` → MMS-TTS)
+        before returning the waveform.
     """
     result = PipelineResult(audio_path=audio_path)
     default_output_dir = os.path.abspath(
@@ -99,9 +115,24 @@ def run_pipeline(
     )
     output_dir = output_dir or default_output_dir
     t_total = time.perf_counter()
+    keep_loaded = os.environ.get("BANK_PIPELINE_KEEP_LOADED", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+    def _maybe_unload(fn, *args) -> None:
+        if keep_loaded:
+            return
+        try:
+            fn(*args)
+        except Exception:
+            pass
 
     # ── Stage 1: STT ─────────────────────────────────────────────────────────
     t0 = time.perf_counter()
+    _unload_stt = None
     try:
         from backend.stt import transcribe, unload_model as _unload_stt
         result.kannada_text = transcribe(audio_path, model="specialized", beam_size=1)
@@ -110,10 +141,8 @@ def run_pipeline(
         result.total_time_s = round(time.perf_counter() - t_total, 2)
         return result
     finally:
-        try:
-            _unload_stt("specialized")
-        except Exception:
-            pass
+        if _unload_stt is not None:
+            _maybe_unload(_unload_stt, "specialized")
     result.stage_times["stt"] = round(time.perf_counter() - t0, 2)
 
     if not result.kannada_text.strip():
@@ -123,6 +152,7 @@ def run_pipeline(
 
     # ── Stage 2: Translation (Kannada -> English) ─────────────────────────────
     t0 = time.perf_counter()
+    _unload_trans = None
     try:
         from backend.translation import translate_kn_to_en, unload_model as _unload_trans
         result.english_text = translate_kn_to_en(result.kannada_text)
@@ -131,10 +161,8 @@ def run_pipeline(
         result.total_time_s = round(time.perf_counter() - t_total, 2)
         return result
     finally:
-        try:
-            _unload_trans("kn_to_en")
-        except Exception:
-            pass
+        if _unload_trans is not None:
+            _maybe_unload(_unload_trans, "kn_to_en")
     result.stage_times["translation"] = round(time.perf_counter() - t0, 2)
 
     if not result.english_text.strip():
@@ -144,39 +172,61 @@ def run_pipeline(
 
     # ── Stage 3: NLU + Router ────────────────────────────────────────────────
     t0 = time.perf_counter()
+    _unload_nlu = None
     try:
         from backend.nlu import classify, unload_model as _unload_nlu
         from backend.decision_router import route
+        from backend.forms import form_id_for_intent
         result.intent, result.confidence = classify(result.english_text)
         routing = route(result.intent)
         result.route = routing["route"]
         result.response_text = routing["response_text"]
+        result.required_fields = list(routing.get("required_fields") or [])
+        result.form_id = form_id_for_intent(result.intent) or ""
     except Exception as exc:
         result.error = "NLU/Router failed: " + str(exc)
         result.total_time_s = round(time.perf_counter() - t_total, 2)
         return result
     finally:
-        try:
-            _unload_nlu("finetuned")
-        except Exception:
-            pass
+        if _unload_nlu is not None:
+            _maybe_unload(_unload_nlu, "finetuned")
     result.stage_times["nlu_router"] = round(time.perf_counter() - t0, 2)
 
     # ── Stage 4: TTS ──────────────────────────────────────────────────────────
+    # Natural Kannada = Indic Parler. Free Whisper/NLU VRAM before Parler worker.
     t0 = time.perf_counter()
+    _unload_tts = None
     try:
+        engine = os.environ.get("BANK_TTS_ENGINE", "parler").strip().lower()
+        if engine in {"parler", "indic-parler", "auto"}:
+            try:
+                from backend.stt import unload_model as _u_stt
+                from backend.nlu import unload_model as _u_nlu
+                from backend.translation import unload_model as _u_tr
+                import gc
+                import torch
+
+                _u_stt("all")
+                _u_nlu("all")
+                _u_tr("all")
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+
         from backend.tts import synthesise, unload_model as _unload_tts
         result.audio = synthesise(result.response_text)
+        if result.audio is None:
+            result.error = "TTS returned empty audio"
     except Exception as exc:
         result.error = "TTS failed: " + str(exc)
         # Non-fatal — return result without audio rather than crashing
         result.total_time_s = round(time.perf_counter() - t_total, 2)
         return result
     finally:
-        try:
-            _unload_tts()
-        except Exception:
-            pass
+        if _unload_tts is not None:
+            _maybe_unload(_unload_tts)
     result.stage_times["tts"] = round(time.perf_counter() - t0, 2)
 
     if result.audio is not None:

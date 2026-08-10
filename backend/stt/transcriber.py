@@ -19,6 +19,12 @@ import warnings
 
 import numpy as np
 import soundfile as sf
+
+from backend.cuda_runtime import ensure_compatible_cudnn
+
+# Must run before faster_whisper / ctranslate2 load their CUDA/cuDNN DLLs.
+ensure_compatible_cudnn()
+
 from faster_whisper import WhisperModel
 
 from backend.stt.exceptions import STTInputError
@@ -88,7 +94,11 @@ class KannadaTranscriber:
 
         self._model_path = model_path
         self._device = device if device is not None else _detect_device()
-        self._compute_type = compute_type
+        # int8 is for CPU; CUDA needs float16 (or float32) with a matching cuDNN.
+        if compute_type == "int8" and self._device == "cuda":
+            self._compute_type = "float16"
+        else:
+            self._compute_type = compute_type
         self.last_inference_time_s: float = 0.0
 
         self._model = self._load_model()

@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import {
   fetchForm,
   fetchFormCatalog,
+  fillFormFieldAudio,
   normalizeFormValue,
-  transcribeFormAudio,
   type BankForm,
   type FormCatalog,
 } from "../api/client";
@@ -14,6 +14,9 @@ type Phase = "pick" | "fill" | "preview";
 
 interface FormsPanelProps {
   apiOnline: boolean | null;
+  /** When set (e.g. from Assist transactional result), open that form immediately. */
+  initialFormId?: string | null;
+  onConsumedInitialForm?: () => void;
 }
 
 function speakKannadaPrompt(text: string) {
@@ -32,10 +35,12 @@ function isSkipPhrase(text: string): boolean {
   return (
     t.includes("ಬಿಟ್ಟುಬಿಡಿ") ||
     t.includes("ಬಿಟ್ಟುಬಿಡು") ||
-    t === "skip" ||
+    t.includes("skip") ||
     t === "none" ||
     t === "na" ||
-    t === "n/a"
+    t === "n/a" ||
+    t.includes("leave it") ||
+    t.includes("no need")
   );
 }
 
@@ -63,7 +68,11 @@ function askableFields(form: BankForm) {
   );
 }
 
-export function FormsPanel({ apiOnline }: FormsPanelProps) {
+export function FormsPanel({
+  apiOnline,
+  initialFormId = null,
+  onConsumedInitialForm,
+}: FormsPanelProps) {
   const { state: recorderState, error: recorderError, startRecording, stopRecording } =
     useAudioRecorder();
 
@@ -74,6 +83,7 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState("");
   const [rawHeard, setRawHeard] = useState("");
+  const [englishHeard, setEnglishHeard] = useState("");
   const [awaitingConfirm, setAwaitingConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,15 +117,6 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
     };
   }, []);
 
-  const askFields = form ? askableFields(form) : [];
-  const currentField = askFields[fieldIndex] ?? null;
-
-  useEffect(() => {
-    if (phase === "fill" && currentField?.prompt_kn && !awaitingConfirm && !busy) {
-      speakKannadaPrompt(currentField.prompt_kn);
-    }
-  }, [phase, fieldIndex, currentField?.id, awaitingConfirm, busy]);
-
   const handlePickForm = useCallback(async (formId: string) => {
     setError(null);
     setLoadError(null);
@@ -126,6 +127,7 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
       setValues(autoFilledValues(detail));
       setDraft("");
       setRawHeard("");
+      setEnglishHeard("");
       setFieldIndex(0);
       setAwaitingConfirm(false);
       setPhase("fill");
@@ -135,6 +137,23 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
       setBusy(false);
     }
   }, []);
+
+  // Assist → Forms handoff
+  useEffect(() => {
+    if (!initialFormId) return;
+    void handlePickForm(initialFormId).then(() => {
+      onConsumedInitialForm?.();
+    });
+  }, [initialFormId, handlePickForm, onConsumedInitialForm]);
+
+  const askFields = form ? askableFields(form) : [];
+  const currentField = askFields[fieldIndex] ?? null;
+
+  useEffect(() => {
+    if (phase === "fill" && currentField?.prompt_kn && !awaitingConfirm && !busy) {
+      speakKannadaPrompt(currentField.prompt_kn);
+    }
+  }, [phase, fieldIndex, currentField?.id, awaitingConfirm, busy]);
 
   const handleStart = useCallback(async () => {
     setError(null);
@@ -152,22 +171,31 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
     setError(null);
     try {
       const ext = blob.type.includes("ogg") ? "ogg" : "webm";
-      const text = await transcribeFormAudio(blob, `field.${ext}`);
-      if (!text) {
+      // Local models: Whisper STT → IndicTrans2 Kn→En → typed extract
+      const filled = await fillFormFieldAudio(
+        blob,
+        currentField.type,
+        currentField.id,
+        `field.${ext}`,
+      );
+      if (!filled.kannada_text && !filled.value) {
         setError("Could not hear speech. Please try again.");
         return;
       }
-      if (!currentField.required && isSkipPhrase(text)) {
-        setRawHeard(text);
+      const skipSource = `${filled.kannada_text} ${filled.english_text} ${filled.value}`;
+      if (!currentField.required && isSkipPhrase(skipSource)) {
+        setRawHeard(filled.kannada_text);
+        setEnglishHeard(filled.english_text);
         setDraft("");
         setAwaitingConfirm(true);
         return;
       }
-      setRawHeard(text);
-      setDraft(normalizeFormValue(text, currentField.type, currentField.id));
+      setRawHeard(filled.kannada_text);
+      setEnglishHeard(filled.english_text);
+      setDraft(filled.value || filled.english_text);
       setAwaitingConfirm(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Transcription failed");
+      setError(err instanceof Error ? err.message : "Form fill failed");
     } finally {
       setBusy(false);
     }
@@ -185,6 +213,7 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
       setValues(nextValues);
       setDraft("");
       setRawHeard("");
+      setEnglishHeard("");
       setAwaitingConfirm(false);
 
       if (fieldIndex >= askable.length - 1) {
@@ -199,25 +228,30 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
   const handleConfirm = useCallback(() => {
     if (!currentField) return;
     const normalized = normalizeFormValue(draft, currentField.type, currentField.id);
-    if (currentField.required && !normalized.trim()) {
+    if (currentField.required && !normalized.trim() && !draft.trim()) {
       setError("This field is required.");
       return;
     }
-    // Optional skip phrases left in the box after STT
-    if (!currentField.required && isSkipPhrase(draft)) {
+    const finalValue = (draft.trim() || normalized).trim();
+    if (!currentField.required && isSkipPhrase(finalValue)) {
       setError(null);
       commitField("");
       return;
     }
+    if (currentField.required && !finalValue) {
+      setError("This field is required.");
+      return;
+    }
     setError(null);
-    setDraft(normalized);
-    commitField(normalized.trim());
+    setDraft(finalValue);
+    commitField(finalValue);
   }, [currentField, draft, commitField]);
 
   const handleReRecord = useCallback(() => {
     setAwaitingConfirm(false);
     setDraft("");
     setRawHeard("");
+    setEnglishHeard("");
     setError(null);
   }, []);
 
@@ -229,6 +263,7 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
     }
     setAwaitingConfirm(false);
     setDraft("");
+    setEnglishHeard("");
     setError(null);
     setFieldIndex((i) => i - 1);
   }, [fieldIndex]);
@@ -262,7 +297,8 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
         <header className="forms-header">
           <h1>ಅರ್ಜಿಗಳು · Forms</h1>
           <p className="subtitle">
-            Choose a form in Kannada. Speak each answer one by one. Preview, then print.
+            Speak each answer in Kannada. Local models fill the English form. Preview, then print /
+            save as PDF.
           </p>
         </header>
 
@@ -324,7 +360,11 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
               {recorderState === "recording" && (
                 <p className="recording-hint">Recording… click Stop when finished.</p>
               )}
-              {busy && <p className="recording-hint">Transcribing…</p>}
+              {busy && (
+                <p className="recording-hint">
+                  Transcribing + translating (Whisper → IndicTrans2)…
+                </p>
+              )}
             </>
           )}
 
@@ -332,11 +372,16 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
             <div className="form-confirm">
               {rawHeard && (
                 <p className="form-raw-heard muted">
-                  Heard in Kannada: <strong>{rawHeard}</strong>
+                  Heard (Kannada): <strong>{rawHeard}</strong>
+                </p>
+              )}
+              {englishHeard && (
+                <p className="form-raw-heard muted">
+                  Translated (English): <strong>{englishHeard}</strong>
                 </p>
               )}
               <label className="form-field-label" htmlFor="form-draft">
-                Form value (English)
+                Form value (English) — edit if needed
               </label>
               <input
                 id="form-draft"
@@ -385,10 +430,10 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
       <div className="forms-panel">
         <header className="forms-header no-print">
           <h1>Preview</h1>
-          <p className="subtitle">Check the filled form, then print or save as PDF.</p>
+          <p className="subtitle">Check the filled English form, then print or save as PDF.</p>
           <div className="form-preview-actions">
             <button type="button" className="primary-btn" onClick={handlePrint}>
-              Print
+              Print / Save PDF
             </button>
             <button type="button" className="secondary-btn" onClick={handleStartOver}>
               New form
@@ -400,6 +445,9 @@ export function FormsPanel({ apiOnline }: FormsPanelProps) {
           <div className="bank-form-sheet-header">
             <p className="bank-form-bank">Banking Services</p>
             <h2>{form.title_en}</h2>
+            <p className="muted" style={{ fontSize: "0.85rem" }}>
+              Demo application — not an official bank document
+            </p>
           </div>
 
           <dl className="bank-form-fields">

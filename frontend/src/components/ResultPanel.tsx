@@ -5,9 +5,15 @@ interface ResultPanelProps {
   result: PipelineResult;
   onAskAnother: () => void;
   onViewHistory?: () => void;
+  onFillForm?: (formId: string) => void;
 }
 
-export function ResultPanel({ result, onAskAnother, onViewHistory }: ResultPanelProps) {
+export function ResultPanel({
+  result,
+  onAskAnother,
+  onViewHistory,
+  onFillForm,
+}: ResultPanelProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioUrlRef = useRef<string | null>(null);
 
@@ -35,6 +41,8 @@ export function ResultPanel({ result, onAskAnother, onViewHistory }: ResultPanel
 
   const confidencePct = Math.round(result.confidence * 100);
   const times = result.stage_times;
+  const canFillForm =
+    result.route === "transactional" && Boolean(result.form_id) && Boolean(onFillForm);
 
   return (
     <div className="panel result-panel">
@@ -63,6 +71,22 @@ export function ResultPanel({ result, onAskAnother, onViewHistory }: ResultPanel
           How-to information only — not your live account data.
         </p>
       </div>
+
+      {canFillForm && (
+        <div className="result-block form-handoff">
+          <p>
+            This looks like a form you can fill by speaking Kannada. English fields will be filled
+            with local models (Whisper + IndicTrans2).
+          </p>
+          <button
+            type="button"
+            className="primary-btn"
+            onClick={() => onFillForm?.(result.form_id!)}
+          >
+            Fill form by voice · ಅರ್ಜಿ ಭರ್ತಿ ಮಾಡಿ
+          </button>
+        </div>
+      )}
 
       {result.audio_b64 && (
         <div className="result-block">

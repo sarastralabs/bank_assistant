@@ -66,17 +66,20 @@ seaborn>=0.13
 # (no explicit pin needed — pulled in transitively)
 
 # ── TTS Module (Module 5) ──────────────────────────────────────────────────────
-# TTS uses facebook/mms-tts-kan via transformers' native VitsModel.
-# No extra TTS package install is required.
+# Preferred: AI4Bharat Indic Parler-TTS (Suresh / Anu) in isolated .venv-parler
+#   Setup:  .\scripts\setup_parler_venv.ps1
+#   Env:    BANK_TTS_ENGINE=auto|parler|mms
+#           BANK_TTS_SPEAKER=Suresh|Anu
+# Fallback: facebook/mms-tts-kan via transformers' native VitsModel (main env).
 #
-# Model: facebook/mms-tts-kan (public, cached from Hugging Face)
-# No parler-tts / no IndicF5 / no Coqui dependency is used.
+# Do NOT pip-install parler-tts into the main env — it pins transformers==4.46.1
+# and breaks IndicTrans2 (needs >=4.51).
 
 # sounddevice: optional audio playback for synthesise(..., play=True)
 # Synthesis and file saving work without it — only playback degrades to a no-op.
 sounddevice>=0.4.6
 
-# Ensure transformers stays at >=4.51 for the shipped MMS-TTS pipeline.
+# Ensure transformers stays at >=4.51 for IndicTrans2 + MMS fallback.
 transformers>=4.51.0,<5
 
 # ── API + Frontend (Voice Banking UI) ─────────────────────────────────────────
@@ -84,6 +87,3 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.12
 pydub>=0.25.1
-
-# ── Streamlit prototype (optional) ────────────────────────────────────────────
-streamlit>=1.40.0

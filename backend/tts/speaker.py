@@ -152,6 +152,58 @@ class KannadaSpeaker:
             output = self._model(**inputs).waveform
         return output.squeeze().cpu().numpy().astype(np.float32)
 
+    def synthesise_kannada(
+        self,
+        kannada_text: str,
+        output_path: str | None = None,
+        play: bool = False,
+    ) -> tuple[np.ndarray, int] | None:
+        """
+        Synthesise spoken audio from Kannada text (skips En→Kn translation).
+        Used for fixed lobby greetings so TTS does not depend on IndicTrans2.
+        """
+        if not kannada_text or not kannada_text.strip():
+            return None
+
+        parts = re.split(r"(?<=[।.!?])\s+", kannada_text.strip())
+        sentences = [p.strip() for p in parts if p.strip()] or [kannada_text.strip()]
+
+        silence = np.zeros(
+            int(_INTER_SENTENCE_SILENCE_S * self.sample_rate),
+            dtype=np.float32,
+        )
+
+        t_start = time.perf_counter()
+        audio_parts: list[np.ndarray] = []
+        for sentence in sentences:
+            audio_parts.append(self._synthesise_kannada(sentence))
+            if len(sentences) > 1:
+                audio_parts.append(silence)
+
+        self.last_synthesis_time_s = time.perf_counter() - t_start
+
+        if len(sentences) > 1 and audio_parts:
+            audio_parts = audio_parts[:-1]
+
+        audio = np.concatenate(audio_parts)
+        sr = self.sample_rate
+
+        if output_path:
+            out_dir = os.path.dirname(output_path)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
+            sf.write(output_path, audio, sr)
+
+        if play:
+            try:
+                import sounddevice as sd  # noqa: PLC0415
+                sd.play(audio, sr)
+                sd.wait()
+            except Exception:
+                pass
+
+        return audio, sr
+
     def synthesise(
         self,
         english_text: str,

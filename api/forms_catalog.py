@@ -31,6 +31,7 @@ def list_forms() -> dict[str, Any]:
     return {
         "disclaimer_kn": data["disclaimer_kn"],
         "disclaimer_en": data["disclaimer_en"],
+        "intent_map": data.get("intent_map") or {},
         "forms": forms,
     }
 
@@ -45,3 +46,10 @@ def get_form(form_id: str) -> dict[str, Any] | None:
                 "disclaimer_en": data["disclaimer_en"],
             }
     return None
+
+
+def form_id_for_intent(intent: str) -> str | None:
+    """Resolve NLU intent → form id from forms.json intent_map."""
+    data = _load()
+    mapping = data.get("intent_map") or {}
+    return mapping.get(intent)

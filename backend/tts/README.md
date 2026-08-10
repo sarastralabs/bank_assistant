@@ -8,6 +8,27 @@ Model: `facebook/mms-tts-kan` -- 36 MB, public (no auth), fully offline, CC-BY-N
 
 ---
 
+## Pipeline integration (`backend/pipeline.py`)
+
+`run_pipeline()` passes the Decision Router's English `response_text` directly to
+`synthesise()`. **English is never sent to MMS-TTS.** Translation happens inside
+the TTS module before synthesis:
+
+```
+Router (English response_text)
+    -> synthesise()                    # called from pipeline.py Stage 4
+        split sentences
+        -> translate_en_to_kn()        # per sentence, Translation module
+        -> MMS-TTS (facebook/mms-tts-kan)
+        -> audio
+```
+
+Reading `pipeline.py` alone can look like English goes straight to a Kannada-only
+model; the call chain is `pipeline.synthesise()` → `speaker.synthesise()` →
+`translate_en_to_kn()` → `_synthesise_kannada()`.
+
+---
+
 ## Quick Start
 
 ```python
@@ -66,16 +87,25 @@ Sample rate: 16000 Hz. Typical output: 8-15 seconds of audio per banking respons
 
 ## Voice Quality
 
-MMS-TTS produces intelligible Kannada speech but with a robotic/synthetic quality
-typical of VITS models trained on limited per-language data. This is acceptable
-for a student project pipeline demonstration. The speech is clearly Kannada,
-correctly pronounced, and understandable to native speakers.
+**Preferred:** AI4Bharat **Indic Parler-TTS** with named Kannada speakers
+**Suresh** (default) or **Anu** — natural, bank-friendly voice.
 
-For higher quality, see the design decision history below.
+Runs in an **isolated** `.venv-parler` (transformers 4.46.1) so the main app
+can keep transformers ≥4.51 for IndicTrans2. A long-lived worker process
+(`run_parler_tts_worker.py`) is started on first synth.
+
+```powershell
+.\scripts\setup_parler_venv.ps1
+# optional:
+# $env:BANK_TTS_SPEAKER = "Anu"      # or Suresh
+# $env:BANK_TTS_ENGINE  = "parler"   # auto | parler | mms
+```
+
+**Fallback:** `facebook/mms-tts-kan` (robotic but offline / no extra setup).
 
 ---
 
-## Known Quality Fixes (both implemented in speaker.py)
+## Known Quality Fixes (both implemented in speaker.py / __init__.py)
 
 ### Fix 1 -- Sentence splitting
 
@@ -125,55 +155,26 @@ data/tts_output/     .wav files from synthesise(output_path=...)  [gitignored]
 
 ---
 
-## Design Decision History -- Why Not indic-parler-tts
+## Design Decision History -- Indic Parler-TTS (restored via isolated venv)
 
 The original design specified `ai4bharat/indic-parler-tts` (Parler-TTS, ~0.9B params)
-as the TTS model due to its higher Kannada voice quality (NSS 88.17) and 4 named
+as the TTS model due to its higher Kannada voice quality (NSS 88.17) and named
 Kannada voices (Suresh, Anu, Chetan, Vidya).
 
-**Two sequential blockers were hit:**
+### Blocker -- transformers conflict (still true in the *main* env)
 
-### Blocker 1 -- transformers metadata pin
-`parler-tts 0.2.x` on PyPI pins `transformers==4.46.1` as a hard dependency in its
-`setup.py`. Installing it via `pip install parler-tts` silently downgraded
-transformers from 4.57.6 to 4.46.1, breaking IndicTransToolkit (requires >=4.51)
-and the Translation module (`dtype=` parameter removed in 4.46.x).
+`parler-tts` requires `transformers<4.50` for `generate()`, while IndicTransToolkit
+needs `transformers>=4.51`. They cannot share one Python environment.
 
-Workaround applied: `pip install parler-tts --no-deps` to skip the broken metadata pin,
-then `pip install "transformers>=4.51,<5" --upgrade` to restore the correct version.
-This is documented in `requirements.txt` and `setup.bat`.
+### Current solution (2026)
 
-### Blocker 2 -- GenerationMixin incompatibility (fatal, no fix)
-After resolving Blocker 1, model loading succeeded but inference crashed with:
-```
-ValueError: Config has to be initialized with text_encoder, audio_encoder and decoder config
-```
-This is a known issue (parler-tts GitHub issue #219, opened July 2025, still open).
-In transformers >=4.50, `PretrainedConfig.to_diff_dict()` calls `self.__class__()`
-with no arguments for logging purposes. `ParlerTTSConfig.__init__` requires
-`text_encoder`, `audio_encoder`, and `decoder` and raises `ValueError` when called
-with no args.
+Install Parler in **`.venv-parler`** and call it through `backend/tts/parler_bridge.py`
+(persistent worker). Main env keeps MMS as fallback. See `scripts/setup_parler_venv.ps1`.
 
-A monkey-patch was applied to override `ParlerTTSConfig.to_diff_dict` to skip the
-no-args instantiation. This unblocked model loading. However, inference then crashed
-with a second fatal error:
-```
-AttributeError: 'ParlerTTSForConditionalGeneration' object has no attribute '_validate_model_kwargs'
-```
-Investigation revealed that parler-tts's custom `generate()` method calls 10
-`GenerationMixin` methods that were removed from `PreTrainedModel` in transformers
->=4.50 (verified by AST analysis). The maintainer's official workaround is
-`transformers<4.50` -- which conflicts with IndicTransToolkit's `>=4.51` requirement.
-There is no fix that works in a shared environment.
+---
 
-**Decision:** Abandon `indic-parler-tts` entirely. Use `facebook/mms-tts-kan` instead.
-
-### Why facebook/mms-tts-kan
-- No gating, no auth, no dependency conflicts
-- `VitsModel` is natively in transformers 4.57.6 -- zero new installs
-- 36 MB vs 2 GB model size
-- Fully offline after 36 MB download
-- Voice quality lower but acceptable for demo scope
-
-The monkey-patches added for parler-tts were removed entirely from the shipped code.
-Dead code does not ship.
+### Why MMS remains as fallback
+- No gating, works without the second venv
+- `VitsModel` is native in transformers 4.57+
+- 36 MB vs ~2 GB
+- Voice quality lower; use only when Parler is not set up
