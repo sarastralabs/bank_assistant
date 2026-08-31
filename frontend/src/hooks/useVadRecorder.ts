@@ -22,8 +22,8 @@ export interface VadListenOptions {
 }
 
 const DEFAULTS: Required<VadListenOptions> = {
-  // Shorter end-of-speech wait → snappier turn-taking (was 1200)
-  silenceMs: 700,
+  // Longer end-of-speech wait for natural Kannada speech pauses (was 700ms)
+  silenceMs: 1400,
   minSpeechMs: 350,
   maxWaitMs: 25000,
   maxUtteranceMs: 18000,
