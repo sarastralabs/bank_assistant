@@ -1,424 +1,280 @@
 # Kannada Voice Banking Assistant
 
-Informational Kannada voice banking demo: speak in Kannada, get spoken **how-to guidance** back in Kannada.
-
-This app does **not** fetch live account balances or personal bank data. It explains how to complete banking tasks (ATM, branch, forms) using a local ML pipeline.
-
-## What you get
-
-- **Web UI** (React) — Home · Assist · History  
-- **API** (FastAPI) — audio processing + SQLite query history  
-- **Pipeline** (offline after one-time model download):
-
-```
-Kannada audio
-  → STT (Whisper VAANI / faster-whisper)
-  → Translation KN→EN (IndicTrans2)
-  → NLU (DistilBERT intents)
-  → Decision Router (static bank_info.json)
-  → TTS (MMS-TTS + EN→KN)
-  → Kannada voice reply
-```
-
-Supported intents: how to check balance, apply for loan, open account, deposit, withdraw, account procedures, interest rates.
+A full AI/ML pipeline that takes spoken Kannada audio and returns a Kannada voice response for banking queries. Built as a college engineering project (AI/ML branch).
 
 ---
 
-## Requirements
+## Pipeline Overview
 
-| Item | Notes |
-|------|--------|
-| **Python** | **3.12 recommended.** Avoid 3.13/3.14 — `av`, `torch`, and `ctranslate2` have no prebuilt wheels there and pip will try to compile them from source |
-| **Node.js** | 18+ (for the frontend) |
-| **Disk** | ~4–6 GB free for models + HF cache |
-| **RAM** | 8 GB minimum; 16 GB comfortable |
-| **Internet** | Needed **once** for package + model downloads |
-| **Windows** | Microsoft C++ Build Tools (for `IndicTransToolkit`) |
-| **HuggingFace account** | Required for gated IndicTrans2 models |
-
-Optional: [ffmpeg](https://ffmpeg.org/) on PATH (helps browser `.webm` conversion; PyAV is used as fallback).
+```
+User speaks Kannada
+        ↓
+[Module 1] STT — Whisper (ARTPARK-IISc vaani-kannada, int8)
+        ↓  Kannada text
+[Module 2] Translation — IndicTrans2 indic-en-dist-200M
+        ↓  English text
+[Module 3] NLU — DistilBERT fine-tuned (94 training samples, 7 intents)
+        ↓  Intent label + confidence
+[Module 4] Decision Router — pure Python logic
+        ↓  Route (informational/transactional) + English response text
+[Module 5] TTS — IndicTrans2 en-indic + Facebook MMS-TTS (mms-tts-kan)
+        ↓
+User hears Kannada voice response
+```
 
 ---
 
-## Full setup (do these in order)
+## Project Structure
 
-### Fast path on a new Windows PC (recommended)
-
-Copy the project folder to the new machine, then run **one** command from the project root:
-
-```bat
-scripts\setup_new_pc.bat
+```
+voice-based-assistant/
+│
+├── backend/                    # All AI/ML modules
+│   ├── pipeline.py             # Sequential pipeline orchestrator (main entry point)
+│   ├── pipeline_bridge.py      # Bridge for API calls
+│   │
+│   ├── stt/                    # Module 1: Speech-to-Text
+│   │   ├── __init__.py         # Public API: transcribe(), unload_model()
+│   │   ├── transcriber.py      # KannadaTranscriber (faster-whisper wrapper)
+│   │   ├── convert_models.py   # One-time: HuggingFace → CTranslate2 int8
+│   │   ├── benchmark.py        # WER/CER comparison script
+│   │   ├── utils.py            # Audio validation, silence detection
+│   │   └── exceptions.py       # STTInputError
+│   │
+│   ├── translation/            # Module 2: Kannada ↔ English Translation
+│   │   ├── __init__.py         # Public API: translate_kn_to_en(), translate_en_to_kn(), unload_model()
+│   │   ├── translator.py       # IndicTranslator (IndicTrans2 wrapper)
+│   │   ├── benchmark.py        # BLEU/chrF2++ benchmark
+│   │   ├── utils.py            # Language code validation
+│   │   └── exceptions.py       # TranslationInputError
+│   │
+│   ├── nlu/                    # Module 3: Intent Classification
+│   │   ├── __init__.py         # Public API: classify(), unload_model()
+│   │   ├── train.py            # Fine-tuning script (run once on GPU)
+│   │   ├── evaluate.py         # Comparison: keyword baseline vs DistilBERT
+│   │   ├── distilbert_classifier.py  # Fine-tuned DistilBERT inference
+│   │   ├── keyword_classifier.py     # Rule-based baseline (no training)
+│   │   ├── dataset.py          # Data loading + stratified split
+│   │   ├── intents.py          # Single source of truth for 7 intent labels
+│   │   └── exceptions.py       # NLUInputError
+│   │
+│   ├── decision_router/        # Module 4: Decision Router (no ML)
+│   │   ├── __init__.py         # Public API: route()
+│   │   ├── router.py           # Routing logic + bank_info.json lookup
+│   │   └── exceptions.py       # RouterError
+│   │
+│   ├── tts/                    # Module 5: Text-to-Speech
+│   │   ├── __init__.py         # Public API: synthesise(), unload_model()
+│   │   └── speaker.py          # KannadaSpeaker (MMS-TTS wrapper)
+│   │
+│   └── forms/                  # Form generation (entity extraction)
+│       ├── extract.py          # Entity extraction from English text
+│       └── intent_map.py       # Intent → required fields mapping
+│
+├── api/                        # FastAPI backend server
+│   ├── main.py                 # FastAPI app entry point
+│   ├── kiosk_state.py          # Session/state management
+│   ├── audio.py                # Audio file handling
+│   └── routes/                 # API route handlers
+│       ├── pipeline.py         # /api/pipeline endpoint
+│       ├── kiosk.py            # /api/kiosk endpoints
+│       ├── forms.py            # /api/forms endpoints
+│       └── history.py          # /api/history endpoints
+│
+├── frontend/                   # React + TypeScript UI
+│   ├── src/App.tsx             # Main user kiosk interface
+│   ├── src/AdminApp.tsx        # Admin dashboard
+│   └── src/components/         # UI components
+│
+├── data/
+│   ├── nlu_training_data.json  # 294 labeled sentences (42 per intent)
+│   ├── bank_info.json          # Banking rates + procedures (informational responses)
+│   ├── forms.json              # Form templates for transactional flows
+│   ├── stt_test_audio/         # 11 Kannada test audio clips
+│   │   └── transcripts.json   # Ground-truth Kannada transcripts
+│   └── translation_test/
+│       └── reference_translations.json  # English reference translations
+│
+├── models/
+│   ├── whisper-medium-ct2/          # Baseline STT model (CTranslate2 int8)
+│   ├── whisper-medium-vaani-ct2/    # Specialized Kannada STT model
+│   └── nlu-distilbert/              # Fine-tuned DistilBERT + benchmark results
+│
+├── scripts/
+│   ├── setup_new_pc.bat        # Full setup script for new machine
+│   └── setup_new_pc.ps1        # PowerShell version
+│
+├── requirements.txt            # Python dependencies
+├── backend/pipeline.py         # Run this to test the full pipeline
+└── run_tts_responses_fast.py   # Generate audio responses for all 11 test clips
 ```
 
-Or:
+---
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup_new_pc.ps1
-```
+## 7 Banking Intents
 
-The script checks Python + Node, creates `.venv`, installs packages, walks you through HuggingFace login, downloads/converts all models, and runs `npm install`.
+| Intent | Meaning | Route |
+|--------|---------|-------|
+| `check_balance` | Check account balance | informational |
+| `apply_loan` | Apply for a loan | transactional |
+| `open_account` | Open a new account | transactional |
+| `deposit_money` | Deposit money | transactional |
+| `withdraw_money` | Withdraw money | transactional |
+| `account_info_query` | ATM card, PIN, cheque book, name change, etc. | informational |
+| `interest_rate_query` | Interest rates, FD rates, loan repayment | informational |
 
-**Before / during the script you must still:**
+---
 
-1. Accept licenses on both IndicTrans2 model pages (browser)
-2. Paste your HuggingFace Read token when asked
-3. Install [MSVC Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) if IndicTransToolkit fails to compile
+## Models Used
 
-Manual step-by-step follows if you prefer not to use the script.
+| Module | Model | Size | Notes |
+|--------|-------|------|-------|
+| STT (baseline) | `openai/whisper-medium` | ~400MB int8 | Generic multilingual |
+| STT (specialized) | `ARTPARK-IISc/whisper-medium-vaani-kannada` | ~400MB int8 | Fine-tuned on Kannada VAANI dataset |
+| Translation KN→EN | `ai4bharat/indictrans2-indic-en-dist-200M` | ~800MB | Gated — requires HF auth |
+| Translation EN→KN | `ai4bharat/indictrans2-en-indic-dist-200M` | ~800MB | Gated — requires HF auth |
+| NLU | `distilbert-base-uncased` fine-tuned | ~250MB | Trained on 294 banking sentences |
+| TTS | `facebook/mms-tts-kan` | ~36MB | Public — no auth needed |
 
-### 1. Clone / open the project
+---
+
+## Benchmark Results
+
+### STT (11 clips, seed=42, beam_size=5)
+
+| Model | WER% | CER% |
+|-------|------|------|
+| Baseline (whisper-medium) | 111.11 | 87.55 |
+| Specialized (vaani-kannada) | **50.00** | **20.60** |
+
+### Translation (11 phrases, BLEU/chrF2++)
+
+| Metric | Score |
+|--------|-------|
+| Corpus BLEU | 16.30 |
+| Corpus chrF2++ | **48.28** |
+
+### NLU (46 test sentences, stratified split seed=42)
+
+| Model | Accuracy | Macro F1 |
+|-------|----------|----------|
+| Keyword baseline | 60.9% | 0.619 |
+| Fine-tuned DistilBERT | **97.8%** | **0.979** |
+
+---
+
+## Quick Start
+
+### Prerequisites
+- Python 3.10+, Windows 10/11
+- 16GB RAM, GPU recommended (8GB VRAM) but CPU works
+
+### 1. Install dependencies
 
 ```bash
-cd D:\Projects\bank_assistant
-```
-
-### 2. Windows only — install C++ Build Tools
-
-`IndicTransToolkit` compiles a C extension. Without MSVC you will see:
-
-`error: Microsoft Visual C++ 14.0 or greater is required`
-
-1. Install [Build Tools for Visual Studio](https://visualstudio.microsoft.com/visual-cpp-build-tools/)  
-   or: `winget install Microsoft.VisualStudio.2022.BuildTools`
-2. Select workload: **Desktop development with C++** (or VCTools)
-3. **Restart the terminal** after install
-
-### 3. Create a virtual environment (recommended)
-
-```bash
-python -m venv .venv
-
-# Windows PowerShell
-.\.venv\Scripts\Activate.ps1
-
-# Windows CMD
-.\.venv\Scripts\activate.bat
-
-# Linux / macOS
-source .venv/bin/activate
-```
-
-### 4. Install Python packages
-
-**Windows (use the project script):**
-
-```bash
-setup.bat
-```
-
-That runs:
-
-1. `pip install Cython numpy setuptools`
-2. `pip install IndicTransToolkit --no-build-isolation`
-3. `pip install -r requirements.txt`
-
-**Or manually on Windows:**
-
-```bash
-pip install Cython numpy setuptools
+pip install -r requirements.txt
 pip install IndicTransToolkit --no-build-isolation
-pip install -r requirements.txt
+pip install "transformers>=4.51.0,<5.0" --upgrade
+pip install "huggingface-hub>=0.23,<1.0" --upgrade
 ```
 
-**Linux / macOS:**
+### 2. HuggingFace authentication (one-time)
 
 ```bash
-pip install -r requirements.txt
+huggingface-cli login
 ```
 
-**CPU-only PyTorch (optional, smaller install):**
+Then visit these pages while logged in and click **"Agree and access"**:
+- https://huggingface.co/ai4bharat/indictrans2-indic-en-dist-200M
+- https://huggingface.co/ai4bharat/indictrans2-en-indic-dist-200M
+
+### 3. One-time model setup
 
 ```bash
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-```
+# Convert STT models (~10 minutes, downloads ~3GB)
+python backend/stt/convert_models.py --model all
 
-Verify:
-
-```bash
-python -c "from IndicTransToolkit import IndicProcessor; print('IndicTransToolkit OK')"
-python -c "import transformers; print('transformers', transformers.__version__)"
-```
-
-### 5. HuggingFace account, licenses, and token
-
-IndicTrans2 models are **gated**. You must accept licenses and authenticate before download.
-
-#### 5a. Create / log into HuggingFace
-
-https://huggingface.co/join
-
-#### 5b. Accept model licenses (required)
-
-While logged in, open each page and click **Agree and access repository**:
-
-| Model | Purpose | Link |
-|-------|---------|------|
-| `ai4bharat/indictrans2-indic-en-dist-200M` | Kannada → English | https://huggingface.co/ai4bharat/indictrans2-indic-en-dist-200M |
-| `ai4bharat/indictrans2-en-indic-dist-200M` | English → Kannada | https://huggingface.co/ai4bharat/indictrans2-en-indic-dist-200M |
-
-STT / TTS models used below are public (no license click required).
-
-#### 5c. Create an access token
-
-1. Go to https://huggingface.co/settings/tokens  
-2. Create a token of type **Read** — not *Fine-grained*. Fine-grained tokens omit gated-repo access by default and can crash `hf auth login` with `KeyError: 'accessToken'`.  
-3. Copy it. A real token starts with `hf_` and is about 37 characters long.
-
-Every command below writes `<YOUR_TOKEN>` — replace that with the value you just copied. Saving the literal placeholder text produces a stored-but-invalid token, and every gated download then fails with a confusing `401 Unauthorized`.
-
-#### 5d. Log in on this machine
-
-```bash
-hf auth login
-```
-
-Paste the token when prompted.
-
-On older `huggingface_hub` versions (< 1.0) the command is `huggingface-cli login` instead. If `hf` is missing: `pip install -U "huggingface_hub[cli]"`.
-
-If `hf auth login` errors out, save the token directly instead:
-
-```bash
-python -c "from huggingface_hub import HfFolder; HfFolder.save_token('<YOUR_TOKEN>')"
-```
-
-Or set an env var for the current session:
-
-```bash
-# Windows PowerShell
-$env:HF_TOKEN="<YOUR_TOKEN>"
-
-# Windows CMD
-set HF_TOKEN=<YOUR_TOKEN>
-
-# Linux / macOS
-export HF_TOKEN=<YOUR_TOKEN>
-```
-
-#### 5e. Verify gated access
-
-First confirm the token itself is valid — this must print your HuggingFace username:
-
-```bash
-python -c "from huggingface_hub import whoami; print(whoami()['name'])"
-```
-
-If it raises `Invalid user token`, the stored token is wrong or was pasted incompletely. Inspect what is actually saved:
-
-```bash
-python -c "from huggingface_hub import get_token; t=get_token(); print('len:', len(t) if t else None)"
-```
-
-A length of 23 means the placeholder was saved verbatim — redo step 5d with your real token.
-
-Then confirm access to the gated repos:
-
-```bash
-python -c "from huggingface_hub import model_info; print(model_info('ai4bharat/indictrans2-indic-en-dist-200M').id); print(model_info('ai4bharat/indictrans2-en-indic-dist-200M').id)"
-```
-
-Both lines should print the model IDs. If you get `GatedRepoError` while `whoami` works, the licenses in step 5b were not accepted on that account.
-
-### 6. Download / prepare ML models (one-time, needs internet)
-
-Run these **with offline mode OFF** (do not set `HF_HUB_OFFLINE=1` yet).
-
-#### 6a. STT — Kannada Whisper (required)
-
-Downloads ~1.5 GB, converts to local CTranslate2 int8 under `models/`:
-
-```bash
-python backend/stt/convert_models.py --model specialized
-```
-
-This writes `models/whisper-medium-vaani-ct2/` including `tokenizer.json` for offline use.
-
-Optional baseline (benchmark only):
-
-```bash
-python backend/stt/convert_models.py --model baseline
-# or both: python backend/stt/convert_models.py --model all
-```
-
-#### 6b. Translation — IndicTrans2 (required)
-
-Caches both gated models into the HuggingFace hub cache:
-
-```bash
-python -c "from transformers import AutoModelForSeq2SeqLM, AutoTokenizer; m='ai4bharat/indictrans2-indic-en-dist-200M'; AutoTokenizer.from_pretrained(m, trust_remote_code=True); AutoModelForSeq2SeqLM.from_pretrained(m, trust_remote_code=True); print('kn->en OK')"
-
-python -c "from transformers import AutoModelForSeq2SeqLM, AutoTokenizer; m='ai4bharat/indictrans2-en-indic-dist-200M'; AutoTokenizer.from_pretrained(m, trust_remote_code=True); AutoModelForSeq2SeqLM.from_pretrained(m, trust_remote_code=True); print('en->kn OK')"
-```
-
-Cache location:
-
-- Windows: `%USERPROFILE%\.cache\huggingface\hub`
-- Linux/macOS: `~/.cache/huggingface/hub`
-
-#### 6c. NLU — DistilBERT intent classifier (required)
-
-Trains and saves the checkpoint (~few minutes on CPU):
-
-```bash
-# From project root so `backend` imports resolve
-set PYTHONPATH=.
+# Train NLU model (~1 minute on GPU)
 python backend/nlu/train.py
 ```
 
-PowerShell:
-
-```powershell
-$env:PYTHONPATH="."
-python backend/nlu/train.py
-```
-
-Output: `models/nlu-distilbert/`
-
-#### 6d. TTS — MMS-TTS Kannada (required)
-
-Public model (~36 MB), no auth:
+### 4. Run the pipeline test (VERIFIED — confirmed working)
 
 ```bash
-python -c "from transformers import VitsModel, AutoTokenizer; m='facebook/mms-tts-kan'; AutoTokenizer.from_pretrained(m); VitsModel.from_pretrained(m); print('TTS OK')"
+python -m backend.pipeline
 ```
 
-### 7. Install frontend dependencies
+Runs 4 test clips through the full pipeline. Audio responses saved to `data/tts_output/`.
+
+### 5. Generate all 11 responses
+
+```bash
+python run_tts_responses_fast.py
+```
+
+Saves 11 Kannada voice response `.wav` files to `data/tts_output/`.
+
+---
+
+## Memory Architecture
+
+All four AI models together would exceed 16GB RAM. The pipeline uses **sequential load-unload**:
+
+```
+STT model loads → transcribe → STT unloads
+Translation loads → translate → Translation unloads  
+NLU loads → classify → NLU unloads
+Router runs (no model, instant)
+TTS loads → synthesise → TTS unloads
+```
+
+Peak GPU memory: ~0.4GB at any moment. Verified stable across 4 repeated runs.
+
+---
+
+## Key Design Decisions
+
+**Why DistilBERT for NLU instead of a larger model?**
+DistilBERT is 40% smaller than BERT-base, 60% faster at inference, and retains 97% of accuracy. For 294 training sentences, the capacity difference is irrelevant — DistilBERT reached 97.8% test accuracy.
+
+**Why Facebook MMS-TTS instead of indic-parler-tts?**
+indic-parler-tts was the original choice (higher voice quality) but has a hard incompatibility with transformers >=4.50: 10 GenerationMixin methods removed from the custom generate() call. MMS-TTS uses VitsModel natively in transformers, has no dependency conflicts, and requires no HuggingFace auth.
+
+**Why keyword matching as the NLU baseline?**
+BART-large-mnli (the standard zero-shot baseline) requires 50+ GB RAM on CPU. Keyword matching is the honest baseline for a 300-sentence domain-specific dataset — it shows what's achievable with zero training data.
+
+**Why sequential model unloading?**
+Loading all 4 models simultaneously causes a Windows access violation (exit -1073740791). Sequential load-unload keeps peak memory under 1GB and the process stable.
+
+---
+
+## API Server (FastAPI)
+
+```bash
+cd api
+uvicorn main:app --reload --port 8000
+```
+
+Endpoints:
+- `POST /api/pipeline` — process audio file, returns intent + audio response
+- `GET /api/history` — query history
+- `POST /api/forms` — form generation for transactional flows
+
+---
+
+## Frontend (React)
 
 ```bash
 cd frontend
 npm install
-cd ..
-```
-
-### 8. Run the app
-
-**Terminal 1 — API**
-
-```bash
-uvicorn api.main:app --reload --port 8000
-```
-
-**Terminal 2 — Frontend**
-
-```bash
-cd frontend
 npm run dev
 ```
 
-Or on Windows: `scripts\dev.bat`
-
-Open **http://localhost:5173**
-
-- **Home** — product landing (rates, intents, how-to messaging)  
-- **Assist** — record / upload Kannada audio  
-- **History** — saved queries + replay voice (SQLite)
-
-The API runs with `HF_HUB_OFFLINE=1` so inference uses local caches only. If a model is missing, download it again with offline mode disabled (step 6).
+Opens at `http://localhost:5173`
 
 ---
 
-## Checklist (first machine)
+## License
 
-- [ ] Python 3.12+ and Node 18+
-- [ ] MSVC Build Tools (Windows)
-- [ ] `setup.bat` / `pip install -r requirements.txt` succeeded
-- [ ] HuggingFace account created
-- [ ] Accepted licenses for both IndicTrans2 models
-- [ ] `huggingface-cli login` done
-- [ ] STT converted → `models/whisper-medium-vaani-ct2/`
-- [ ] IndicTrans2 cached (kn→en and en→kn)
-- [ ] NLU trained → `models/nlu-distilbert/`
-- [ ] TTS `facebook/mms-tts-kan` cached
-- [ ] `npm install` in `frontend/`
-- [ ] API on `:8000` and UI on `:5173`
-
----
-
-## Project layout
-
-```
-bank_assistant/
-├── api/                 FastAPI (process-audio, history, landing, forms, kiosk)
-├── backend/             STT, translation, NLU, router, TTS, forms, pipeline
-├── frontend/            React + Vite UI (Admin · Agent kiosk · Desk)
-├── data/
-│   ├── bank_info.json   Static guidance / sample rates
-│   ├── forms.json       Voice-fill bank form schemas
-│   ├── nlu_training_data.json
-│   ├── history.db       Query history (created at runtime)
-│   └── history_audio/   Saved response WAVs
-├── models/              Local STT + NLU checkpoints (gitignored)
-├── scripts/dev.bat
-├── run_pipeline_subprocess.py
-├── setup.bat
-└── requirements.txt
-```
-
----
-
-## UI entry points
-
-Open http://127.0.0.1:5173 then choose:
-
-| Route | URL hash | Purpose |
-|-------|----------|---------|
-| Home | `#/` | Portal — Admin / Agent / Desk |
-| Admin | `#/admin` | Start/stop lobby agent, session list |
-| Agent | `#/agent` | Full-screen kiosk (camera → greet → conversation) |
-| Desk | `#/desk` | Assist + Forms + History (testing without kiosk) |
-
-**Typical demo:** Admin → **Start agent** → open Agent on the lobby screen → customer stands in front of camera.
-
----
-
-## API endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/health` | Health check |
-| GET | `/api/landing` | Home page data (rates, intents, stats) |
-| POST | `/api/process-audio` | Upload audio → full pipeline JSON + `audio_b64`; saves history |
-| GET | `/api/history` | List saved queries |
-| GET | `/api/history/{id}` | One query including response audio |
-| DELETE | `/api/history/{id}` | Delete one query |
-| DELETE | `/api/history` | Clear all history |
-| GET | `/api/forms` | Voice-fill form catalog |
-| GET | `/api/forms/{id}` | One form schema |
-| POST | `/api/forms/fill-field` | Kannada speech → English field value (STT + IndicTrans2) |
-| GET | `/api/kiosk/status` | Agent kiosk status |
-| POST | `/api/kiosk/start` | Admin starts agent |
-| POST | `/api/kiosk/stop` | Admin stops agent |
-| POST | `/api/kiosk/presence` | Camera presence report |
-| POST | `/api/kiosk/session/begin` | Start customer session |
-| POST | `/api/kiosk/session/phase` | Set phase idle/greeting/conversation |
-| POST | `/api/kiosk/session/end` | End customer session |
-
----
-
-## Troubleshooting
-
-| Problem | Fix |
-|---------|-----|
-| `Failed building wheel for av` (and torch/ctranslate2) | You are on Python 3.13+. Install Python 3.12, then `Remove-Item .venv -Recurse -Force` and `py -3.12 -m venv .venv` |
-| `Microsoft Visual C++ 14.0 required` | Install VS Build Tools + C++ workload; restart terminal; re-run `setup.bat` |
-| `IndicTransToolkit` / Cython build fails | `pip install Cython numpy setuptools` then `pip install IndicTransToolkit --no-build-isolation` |
-| `GatedRepoError` / 401 on IndicTrans2 | Accept licenses on HF website + `hf auth login`. Verify with `whoami` (step 5e) before retrying |
-| `Invalid user token` from `whoami` | Stored token is a placeholder or was truncated. Re-save a real **Read** token (step 5d) |
-| `huggingface-cli is deprecated and no longer works` | Use `hf auth login` (new CLI name in huggingface_hub 1.x) |
-| `Model directory not found ... whisper-medium-vaani-ct2` | `python backend/stt/convert_models.py --model specialized` |
-| STT Hub / tokenizer offline error | Re-run STT convert (writes `tokenizer.json`) |
-| `NLU model checkpoint not found` | `PYTHONPATH=. python backend/nlu/train.py` |
-| TTS / translation “couldn't connect to huggingface.co” | Models not cached yet — download with internet (step 6), then restart API |
-| `No module named 'pydub'` / audio convert fails | `pip install pydub soundfile av` (in requirements); optional: install ffmpeg |
-| Frontend “API offline” | Start `uvicorn api.main:app --reload --port 8000` |
-
----
-
-## Module docs
-
-More detail per stage:
-
-- [backend/stt/README.md](backend/stt/README.md)
-- [backend/translation/README.md](backend/translation/README.md)
-- [backend/tts/README.md](backend/tts/README.md)
-- [backend/decision_router/README.md](backend/decision_router/README.md)
+Academic project — AI/ML Engineering, 2024-25.
+Models are subject to their respective licences (see each module's README).
