@@ -9,6 +9,11 @@ from __future__ import annotations
 
 import os
 
+# Load .env from project root BEFORE any backend imports
+# This sets BANK_TTS_ENGINE=mms, TRANSFORMERS_OFFLINE=1, etc.
+from dotenv import load_dotenv as _load_dotenv
+_load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"), override=False)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

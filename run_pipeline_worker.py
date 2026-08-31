@@ -19,6 +19,14 @@ import sys
 import tempfile
 import traceback
 
+# Load .env before anything else so BANK_TTS_ENGINE and offline flags are set
+_HERE = os.path.dirname(os.path.abspath(__file__))
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(dotenv_path=os.path.join(_HERE, ".env"), override=False)
+except ImportError:
+    pass
+
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
