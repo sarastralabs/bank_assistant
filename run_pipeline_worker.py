@@ -23,7 +23,7 @@ import traceback
 _HERE = os.path.dirname(os.path.abspath(__file__))
 try:
     from dotenv import load_dotenv as _load_dotenv
-    _load_dotenv(dotenv_path=os.path.join(_HERE, ".env"), override=False)
+    _load_dotenv(dotenv_path=os.path.join(_HERE, ".env"), override=True)
 except ImportError:
     pass
 
@@ -31,14 +31,10 @@ os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("BANK_PIPELINE_KEEP_LOADED", "1")
-_tts = os.environ.get("BANK_TTS_ENGINE", "parler").strip().lower()
-if _tts in {"mms", "mms-tts"} and os.environ.get("BANK_TTS_ALLOW_MMS", "").strip().lower() not in {
-    "1",
-    "true",
-    "yes",
-}:
-    _tts = "parler"
-os.environ["BANK_TTS_ENGINE"] = _tts or "parler"
+# TTS engine: .env sets BANK_TTS_ENGINE=mms — honour that, don't default to parler
+_tts = os.environ.get("BANK_TTS_ENGINE", "mms").strip().lower()
+os.environ["BANK_TTS_ENGINE"] = _tts
+os.environ.setdefault("BANK_TTS_ALLOW_MMS", "1")
 os.environ.setdefault("BANK_TTS_SPEAKER", "Suresh")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

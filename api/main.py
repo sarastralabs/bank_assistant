@@ -12,7 +12,7 @@ import os
 # Load .env from project root BEFORE any backend imports
 # This sets BANK_TTS_ENGINE=mms, TRANSFORMERS_OFFLINE=1, etc.
 from dotenv import load_dotenv as _load_dotenv
-_load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"), override=False)
+_load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"), override=True)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,15 +27,10 @@ from api.routes import admin, forms, history, kiosk, landing, pipeline
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
-# Natural Kannada = Parler. Ignore leftover BANK_TTS_ENGINE=mms unless explicitly allowed.
-_tts = os.environ.get("BANK_TTS_ENGINE", "parler").strip().lower()
-if _tts in {"mms", "mms-tts"} and os.environ.get("BANK_TTS_ALLOW_MMS", "").strip().lower() not in {
-    "1",
-    "true",
-    "yes",
-}:
-    _tts = "parler"
-os.environ["BANK_TTS_ENGINE"] = _tts or "parler"
+# TTS engine: .env sets BANK_TTS_ENGINE=mms — honour that, don't default to parler
+_tts = os.environ.get("BANK_TTS_ENGINE", "mms").strip().lower()
+os.environ["BANK_TTS_ENGINE"] = _tts
+os.environ.setdefault("BANK_TTS_ALLOW_MMS", "1")
 os.environ.setdefault("BANK_TTS_SPEAKER", "Suresh")
 
 app = FastAPI(title="Kannada Voice Banking API", version="1.0.0")
