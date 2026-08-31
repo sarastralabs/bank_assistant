@@ -43,14 +43,14 @@ _DEFAULT_MODEL_ID = "facebook/mms-tts-kan"
 
 # Kannada digit words -- used to replace ASCII digits in translated text
 _DIGIT_MAP: dict[str, str] = {
-    "0": "\u0cb6\u0cc2\u0ca8\u0ccd\u0caf",     # ಶೂನ್ಯ
+    "0": "\u0cb6\u0cc2\u0ca8\u0ccd\u0caf",       # ಶೂನ್ಯ
     "1": "\u0c92\u0c82\u0ca6\u0cc1",             # ಒಂದು
     "2": "\u0c8e\u0cb0\u0ca1\u0cc1",             # ಎರಡು
     "3": "\u0cae\u0cc2\u0cb0\u0cc1",             # ಮೂರು
     "4": "\u0ca8\u0cbe\u0cb2\u0ccd\u0c95\u0cc1", # ನಾಲ್ಕು
     "5": "\u0c90\u0ca6\u0cc1",                   # ಐದು
-    "6": "\u0cbe\u0cb0\u0cc1",                   # ಆರು
-    "7": "\u0cc6\u0cb3\u0cbf",                    # ಏಳು
+    "6": "\u0c86\u0cb0\u0cc1",                   # ಆರು
+    "7": "\u0c8f\u0cb3\u0cc1",                   # ಏಳು
     "8": "\u0c8e\u0c82\u0c9f\u0cc1",             # ಎಂಟು
     "9": "\u0c92\u0c82\u0cac\u0ca4\u0ccd\u0ca4\u0cc1",  # ಒಂಬತ್ತು
 }

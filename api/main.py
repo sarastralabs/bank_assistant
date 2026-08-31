@@ -59,6 +59,22 @@ app.include_router(admin.router, prefix="/api")
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+    # Pre-warm the pipeline worker in a background thread so the first
+    # user query doesn't wait 25-30s for model loading.
+    import threading
+    from backend.pipeline_bridge import worker_enabled, _start_locked, _lock
+
+    def _warm():
+        if not worker_enabled():
+            return
+        try:
+            with _lock:
+                _start_locked()
+        except Exception as exc:
+            import sys
+            print(f"[startup] pipeline worker pre-warm failed: {exc}", file=sys.stderr)
+
+    threading.Thread(target=_warm, daemon=True, name="pipeline-warmup").start()
 
 
 @app.get("/api/health")
