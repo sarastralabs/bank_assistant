@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { getSharedAudioContext } from "../utils/playAudio";
 
 export type VadListenState =
   | "idle"
@@ -26,7 +27,8 @@ const DEFAULTS: Required<VadListenOptions> = {
   minSpeechMs: 350,
   maxWaitMs: 25000,
   maxUtteranceMs: 18000,
-  speechThreshold: 0.045,
+  // Lower threshold helps quiet laptop mics on Windows (was 0.045)
+  speechThreshold: 0.016,
 };
 
 function pickMimeType(): string | undefined {
@@ -55,6 +57,7 @@ function rmsFromAnalyser(analyser: AnalyserNode, buf: Uint8Array): number {
  */
 export function useVadRecorder() {
   const [state, setState] = useState<VadListenState>("idle");
+  const [micLevel, setMicLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -73,6 +76,36 @@ export function useVadRecorder() {
     setState("idle");
   }, []);
 
+  /** Request mic once so the browser prompt appears before hands-free listening. */
+  const warmupMic = useCallback(async (): Promise<boolean> => {
+    setError(null);
+    try {
+      let stream = sharedStreamRef.current;
+      if (!stream || !stream.getAudioTracks().some((t) => t.readyState === "live")) {
+        sharedStreamRef.current?.getTracks().forEach((t) => t.stop());
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        sharedStreamRef.current = stream;
+      }
+      return true;
+    } catch (err) {
+      const message =
+        err instanceof DOMException && err.name === "NotAllowedError"
+          ? "Microphone permission denied — allow mic for this site in the browser bar."
+          : err instanceof Error
+            ? err.message
+            : "Microphone error";
+      setError(message);
+      setState("error");
+      return false;
+    }
+  }, []);
+
   const listenOnce = useCallback(
     async (opts: VadListenOptions = {}): Promise<Blob | null> => {
       const cfg = { ...DEFAULTS, ...opts };
@@ -82,7 +115,6 @@ export function useVadRecorder() {
       const ac = new AbortController();
       abortRef.current = ac;
 
-      let audioCtx: AudioContext | null = null;
       let recorder: MediaRecorder | null = null;
       let raf = 0;
 
@@ -93,7 +125,7 @@ export function useVadRecorder() {
         } catch {
           // ignore
         }
-        void audioCtx?.close().catch(() => undefined);
+        setMicLevel(0);
         cleanupRef.current = null;
       };
       cleanupRef.current = cleanup;
@@ -116,7 +148,10 @@ export function useVadRecorder() {
           return null;
         }
 
-        audioCtx = new AudioContext();
+        const audioCtx = await getSharedAudioContext();
+        if (!audioCtx) {
+          throw new Error("Audio not available — tap the screen once, then try again.");
+        }
         const source = audioCtx.createMediaStreamSource(stream);
         const analyser = audioCtx.createAnalyser();
         analyser.fftSize = 2048;
@@ -138,6 +173,8 @@ export function useVadRecorder() {
         let speechStartedAt: number | null = null;
         let lastLoudAt: number | null = null;
         let speaking = false;
+        let noiseFloor = cfg.speechThreshold * 0.5;
+        let calibrated = false;
 
         const blob = await new Promise<Blob | null>((resolve) => {
           const tick = () => {
@@ -147,7 +184,18 @@ export function useVadRecorder() {
             }
             const now = performance.now();
             const level = rmsFromAnalyser(analyser, timeBuf);
-            const loud = level >= cfg.speechThreshold;
+            setMicLevel(level);
+
+            if (!calibrated && now - startedAt < 400) {
+              noiseFloor = Math.max(noiseFloor, level);
+            } else if (!calibrated) {
+              calibrated = true;
+            }
+
+            const threshold = calibrated
+              ? Math.max(cfg.speechThreshold, noiseFloor * 2.2)
+              : cfg.speechThreshold;
+            const loud = level >= threshold;
 
             if (!speaking) {
               if (loud) {
@@ -192,6 +240,7 @@ export function useVadRecorder() {
         });
 
         cleanup();
+        setMicLevel(0);
         if (ac.signal.aborted) {
           setState("idle");
           return null;
@@ -221,5 +270,5 @@ export function useVadRecorder() {
     [abort, releaseMic],
   );
 
-  return { state, error, listenOnce, abort, releaseMic };
+  return { state, error, micLevel, listenOnce, abort, releaseMic, warmupMic };
 }

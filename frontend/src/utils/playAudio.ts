@@ -80,6 +80,22 @@ export function isAudioUnlocked(): boolean {
   return audioUnlocked;
 }
 
+/** Shared AudioContext for VAD — must be resumed via unlockAudio() after a user gesture. */
+export async function getSharedAudioContext(): Promise<AudioContext | null> {
+  if (typeof window === "undefined") return null;
+  const AC =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AC) return null;
+  if (!sharedCtx || sharedCtx.state === "closed") {
+    sharedCtx = new AC();
+  }
+  if (sharedCtx.state === "suspended") {
+    await sharedCtx.resume();
+  }
+  return sharedCtx;
+}
+
 function pickKannadaVoice(): SpeechSynthesisVoice | null {
   const voices = window.speechSynthesis.getVoices();
   return (
