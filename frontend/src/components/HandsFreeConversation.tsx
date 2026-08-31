@@ -8,7 +8,7 @@ import {
   type PipelineResult,
 } from "../api/client";
 import { useVadRecorder } from "../hooks/useVadRecorder";
-import { playBase64Wav, speakKannadaBrowser } from "../utils/playAudio";
+import { playBase64Wav, speakKannadaBrowser, unlockAudio } from "../utils/playAudio";
 import {
   isEndSessionCommand,
   isRejectCommand,
@@ -88,7 +88,8 @@ export function HandsFreeConversation({
   onRequestEnd,
   onTurnChange,
 }: HandsFreeConversationProps) {
-  const { state: vadState, error: vadError, listenOnce, abort } = useVadRecorder();
+  const { state: vadState, error: vadError, micLevel, listenOnce, abort, warmupMic } =
+    useVadRecorder();
 
   const [turn, setTurn] = useState<HandsFreeTurn>("idle");
   const [mode, setMode] = useState<Mode>("assist");
@@ -107,10 +108,8 @@ export function HandsFreeConversation({
   const playAbortRef = useRef<AbortController | null>(null);
   const listenOnceRef = useRef(listenOnce);
   listenOnceRef.current = listenOnce;
-
-  useEffect(() => {
-    onTurnRef.current?.(turn);
-  }, [turn]);
+  const warmupMicRef = useRef(warmupMic);
+  warmupMicRef.current = warmupMic;
 
   useEffect(() => {
     if (!active || apiOnline === false) {
@@ -125,6 +124,11 @@ export function HandsFreeConversation({
     let session: FormSession | null = null;
 
     const still = () => !cancelled && active;
+
+    const run = async () => {
+      await unlockAudio();
+      const micOk = await warmupMicRef.current();
+      if (!micOk || !still()) return;
 
     const setSession = (next: FormSession | null) => {
       session = next;
@@ -339,7 +343,10 @@ export function HandsFreeConversation({
       }
     };
 
-    void runAssistLoop();
+      await runAssistLoop();
+    };
+
+    void run();
 
     return () => {
       cancelled = true;
@@ -349,6 +356,11 @@ export function HandsFreeConversation({
     };
   }, [active, apiOnline, abort]);
 
+  useEffect(() => {
+    onTurnRef.current?.(turn);
+  }, [turn]);
+
+  const micPct = Math.min(100, Math.round(micLevel * 400));
   const form = formSession?.form ?? null;
   const fieldIndex = formSession?.fieldIndex ?? 0;
   const values = formSession?.values ?? {};
@@ -362,6 +374,11 @@ export function HandsFreeConversation({
         <p className="handsfree-status-text">{statusLabel(turn, mode)}</p>
         {hint && <p className="handsfree-hint">{hint}</p>}
         {vadState === "speech" && <p className="handsfree-hint">ಮಾತನಾಡುತ್ತಿದ್ದೀರಿ…</p>}
+        {turn === "listening" && (
+          <div className="handsfree-mic-meter" aria-hidden>
+            <div className="handsfree-mic-fill" style={{ width: `${micPct}%` }} />
+          </div>
+        )}
       </div>
 
       {(error || vadError) && <p className="api-warning">{error ?? vadError}</p>}
@@ -415,9 +432,6 @@ export function HandsFreeConversation({
               <div className="bank-form-sheet-header">
                 <p className="bank-form-bank">Banking Services</p>
                 <h2>{form.title_en}</h2>
-                <p className="muted" style={{ fontSize: "0.85rem" }}>
-                  Demo application — not an official bank document
-                </p>
               </div>
               <dl className="bank-form-fields">
                 {form.fields.map((f) => (
@@ -453,7 +467,7 @@ export function HandsFreeConversation({
       )}
 
       <p className="handsfree-footer muted">
-        ಹಸ್ತರಹಿತ · Hands-free · ಹೇಳಿ &quot;ಮುಗಿಸು&quot; to end · Demo only
+        ಹಸ್ತರಹಿತ · Hands-free · ಹೇಳಿ &quot;ಮುಗಿಸು&quot; to end
       </p>
     </div>
   );

@@ -20,9 +20,8 @@ export function PortalHome({
           Staff and lobby are separate. Admin signs in and opens the lobby. The Agent screen is
           for customers only — no login there.
         </p>
-        <p className="demo-pill">Demo mode — not live core banking</p>
         {apiOnline === false && (
-          <p className="api-warning">API offline — start uvicorn on port 8001.</p>
+          <p className="api-warning">API offline — start uvicorn on port 8000.</p>
         )}
       </div>
 

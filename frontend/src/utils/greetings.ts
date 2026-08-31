@@ -27,8 +27,7 @@ export interface GreetingCatalogSlot {
   variant_count: number;
 }
 
-// Temporary: use 8001 while OS zombie sockets block 8000 on this machine.
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8001";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
 /** Local system clock → greeting slot (customer lobby). */
 export function slotForHour(hour: number): GreetSlot {

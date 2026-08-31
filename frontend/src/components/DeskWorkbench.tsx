@@ -140,7 +140,7 @@ export function DeskWorkbench({
             <header className="header">
               <h1>Ask how to bank — in Kannada</h1>
               <p className="subtitle">
-                Record a question and get spoken guidance. Demo only — not live account data.
+                Record a question and get spoken guidance on banking tasks.
               </p>
             </header>
           )}

@@ -193,6 +193,16 @@ export function AgentLobby({ apiOnline }: AgentLobbyProps) {
         if (!(runningNow && phaseNow === "idle") || greetingStarted.current) return;
         greetingStarted.current = true;
 
+        // Unlock audio + mic before greeting (camera alone is not a user gesture)
+        await unlockAudio();
+        try {
+          await navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => {
+            s.getTracks().forEach((t) => t.stop());
+          });
+        } catch {
+          // Mic prompt may appear again in conversation
+        }
+
         // Mark greeting UI immediately so user sees the line while audio starts
         const greet = pickGreetingNow(greetCatalog);
         setActiveGreet(greet);
@@ -281,6 +291,10 @@ export function AgentLobby({ apiOnline }: AgentLobbyProps) {
   const handleManualStart = async () => {
     try {
       await unlockAudio();
+      // Mic is separate from camera — request before conversation
+      await navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => {
+        s.getTracks().forEach((t) => t.stop());
+      });
       greetingStarted.current = true;
       await reportKioskPresence(true);
       const next = await beginKioskSession();
@@ -331,7 +345,6 @@ export function AgentLobby({ apiOnline }: AgentLobbyProps) {
               ದಯವಿಟ್ಟು ಸಿಬ್ಬಂದಿ ಈ ಕೌಂಟರ್ ತೆರೆಯುವವರೆಗೆ ಕಾಯಿರಿ.
             </p>
             <p className="lobby-waiting-en">Lobby closed — waiting for staff to open the counter.</p>
-            <p className="demo-pill">Demo mode</p>
             {apiOnline === false && <p className="api-warning">Service offline</p>}
             {error && <p className="api-warning">{error}</p>}
           </div>

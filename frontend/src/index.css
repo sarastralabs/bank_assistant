@@ -2348,6 +2348,22 @@ body:has(.lobby-shell),
   color: var(--muted, #5a6570);
 }
 
+.handsfree-mic-meter {
+  width: 100%;
+  height: 6px;
+  margin-top: 0.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+.handsfree-mic-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4ade80, #22d3ee);
+  transition: width 80ms linear;
+}
+
 .handsfree-result .kannada-text {
   font-size: 1.25rem;
   margin-bottom: 0.35rem;

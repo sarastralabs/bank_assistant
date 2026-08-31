@@ -54,9 +54,6 @@ export function LandingPage({ onStartAssist, onOpenHistory, onOpenForms, refresh
               View history
             </button>
           </div>
-          <p className="landing-disclaimer muted">
-            Informational demo only — guidance on how to complete tasks (branch, ATM, forms), not live banking.
-          </p>
         </div>
         <div className="landing-hero-visual" aria-hidden="true">
           <div className="hero-orb" />
@@ -101,7 +98,7 @@ export function LandingPage({ onStartAssist, onOpenHistory, onOpenForms, refresh
           <section className="landing-section">
             <h2>Sample published rates</h2>
             <p className="section-lead">
-              Static demo figures for common products — not your personal rates from a bank system.
+              Sample published figures for common products.
             </p>
             <div className="rate-table-wrap">
               <table className="rate-table">

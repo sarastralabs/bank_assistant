@@ -445,9 +445,6 @@ export function FormsPanel({
           <div className="bank-form-sheet-header">
             <p className="bank-form-bank">Banking Services</p>
             <h2>{form.title_en}</h2>
-            <p className="muted" style={{ fontSize: "0.85rem" }}>
-              Demo application — not an official bank document
-            </p>
           </div>
 
           <dl className="bank-form-fields">
