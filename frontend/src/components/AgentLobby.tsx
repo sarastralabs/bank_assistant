@@ -583,7 +583,8 @@ export function AgentLobby({ apiOnline }: AgentLobbyProps) {
                     <button type="button" className="lobby-cta" onClick={() => void handleManualStart()}>
                       ಪ್ರಾರಂಭಿಸಿ · Start
                     </button>
-                    <SpeakGuideCard />
+                    {/* Collapsed: opened by default it pushed the robot off-screen on 1080p. */}
+                    <SpeakGuideCard compact />
                   </>
                 ) : (
                   <>

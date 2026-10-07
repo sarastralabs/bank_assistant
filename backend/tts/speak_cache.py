@@ -54,6 +54,22 @@ def _cache_key(text: str, speaker: str | None = None) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
 
 
+def _wav_too_short(raw: bytes, min_s: float = 0.12) -> bool:
+    """
+    True for empty / near-silent-length clips. Parler occasionally ends a phrase
+    immediately (1-sample WAV); caching that would make the phrase silent forever.
+    """
+    if len(raw) < 44 or raw[:4] != b"RIFF":
+        return True
+    try:
+        import soundfile as sf
+
+        info = sf.info(io.BytesIO(raw))
+        return info.frames < info.samplerate * min_s
+    except Exception:
+        return True
+
+
 def get_cached_b64(text: str, *, speaker: str | None = None) -> str | None:
     if not text or not text.strip():
         return None
@@ -67,7 +83,7 @@ def get_cached_b64(text: str, *, speaker: str | None = None) -> str | None:
     try:
         with open(path, "rb") as handle:
             raw = handle.read()
-        if len(raw) < 44 or raw[:4] != b"RIFF":
+        if _wav_too_short(raw):
             return None
         hit = base64.b64encode(raw).decode("ascii")
         with _CACHE_LOCK:
@@ -86,6 +102,17 @@ def put_cached_b64(
 ) -> None:
     if not text.strip() or not audio_b64:
         return
+    try:
+        raw = base64.b64decode(audio_b64, validate=True)
+    except ValueError:
+        return
+    if _wav_too_short(raw):
+        print(
+            f"[tts-cache] not caching empty/too-short audio for {len(text)}-char text",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
     key = _cache_key(text, speaker)
     max_entries = _max_cache_entries()
     with _CACHE_LOCK:
@@ -98,9 +125,6 @@ def put_cached_b64(
     if not persist:
         return
     try:
-        raw = base64.b64decode(audio_b64, validate=True)
-        if len(raw) < 44 or raw[:4] != b"RIFF":
-            return
         cache_dir = _disk_cache_dir()
         os.makedirs(cache_dir, exist_ok=True)
         path = os.path.join(cache_dir, f"{key}.wav")

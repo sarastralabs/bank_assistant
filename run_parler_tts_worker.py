@@ -218,59 +218,83 @@ def main() -> int:
 
             from backend.tts.audio_util import trim_trailing_silence
 
-            chunk_audio: list[np.ndarray] = []
+            chunk_audio: list[np.ndarray] = [np.zeros(0, dtype=np.float32)] * len(chunks)
             max_tokens = 0
             max_frames = 0
             hit_limit = False
-            for start in range(0, len(chunks), max_batch):
-                group = chunks[start : start + max_batch]
-                n = len(group)
-                prompt_ids = tokenizer(group, return_tensors="pt", padding=True).to(device)
-                budget = max(max_new_tokens_for_text(c) for c in group)
-                max_tokens = max(max_tokens, budget)
-                gen_kwargs: dict = {
-                    "input_ids": desc_ids.input_ids.repeat(n, 1),
-                    "attention_mask": desc_ids.attention_mask.repeat(n, 1),
-                    "prompt_input_ids": prompt_ids.input_ids,
-                    "prompt_attention_mask": prompt_ids.attention_mask,
-                    "max_new_tokens": budget,
-                    "do_sample": do_sample,
-                    "return_dict_in_generate": True,
-                }
-                if do_sample:
-                    gen_kwargs["temperature"] = temperature
-                try:
-                    with torch.inference_mode():
-                        out = model.generate(**gen_kwargs)
-                except Exception as compile_exc:
-                    if not compiled:
-                        raise
-                    _log(
-                        "[parler-worker] compiled generation failed; "
-                        f"retrying eager: {compile_exc}"
-                    )
-                    compiled = False
-                    model.forward = eager_forward
-                    model.generation_config.cache_implementation = None
-                    if device.startswith("cuda"):
-                        torch.cuda.empty_cache()
-                    with torch.inference_mode():
-                        out = model.generate(**gen_kwargs)
+            # Parler sometimes ends a phrase immediately (1-sample output; mostly
+            # Anu-voice short phrases, 20-40% of tries). Regenerate just those chunks instead of
+            # returning silence that would then be cached.
+            min_samples = int(sr * 0.12)
+            empty_retries = max(0, int(os.environ.get("BANK_PARLER_EMPTY_RETRIES", "5")))
+            todo = list(range(len(chunks)))
+            for attempt in range(empty_retries + 1):
+                raw_len: dict[int, int] = {}
+                for start in range(0, len(todo), max_batch):
+                    idxs = todo[start : start + max_batch]
+                    group = [chunks[i] for i in idxs]
+                    n = len(group)
+                    prompt_ids = tokenizer(group, return_tensors="pt", padding=True).to(device)
+                    budget = max(max_new_tokens_for_text(c) for c in group)
+                    max_tokens = max(max_tokens, budget)
+                    gen_kwargs: dict = {
+                        "input_ids": desc_ids.input_ids.repeat(n, 1),
+                        "attention_mask": desc_ids.attention_mask.repeat(n, 1),
+                        "prompt_input_ids": prompt_ids.input_ids,
+                        "prompt_attention_mask": prompt_ids.attention_mask,
+                        "max_new_tokens": budget,
+                        "do_sample": do_sample,
+                        "return_dict_in_generate": True,
+                    }
+                    if do_sample:
+                        gen_kwargs["temperature"] = temperature
+                    try:
+                        with torch.inference_mode():
+                            out = model.generate(**gen_kwargs)
+                    except Exception as compile_exc:
+                        if not compiled:
+                            raise
+                        _log(
+                            "[parler-worker] compiled generation failed; "
+                            f"retrying eager: {compile_exc}"
+                        )
+                        compiled = False
+                        model.forward = eager_forward
+                        model.generation_config.cache_implementation = None
+                        if device.startswith("cuda"):
+                            torch.cuda.empty_cache()
+                        with torch.inference_mode():
+                            out = model.generate(**gen_kwargs)
 
-                lengths = getattr(out, "audios_length", None)
-                for i in range(n):
-                    seq = out.sequences[i]
-                    if lengths is not None:
-                        seq = seq[: int(lengths[i])]
-                    audio = seq.float().cpu().numpy().reshape(-1).astype(np.float32)
-                    # Parler emits audio frames of HOP samples; the budget is in frames.
-                    frames = -(-len(audio) // HOP)
-                    max_frames = max(max_frames, frames)
-                    # Parler stops ~9 frames short of the budget (codebook delay pattern).
-                    hit_limit = hit_limit or frames >= budget - 12
-                    chunk_audio.append(
-                        trim_trailing_silence(audio, sr, threshold=0.01, pad_ms=120)
+                    lengths = getattr(out, "audios_length", None)
+                    for j, ci in enumerate(idxs):
+                        seq = out.sequences[j]
+                        if lengths is not None:
+                            seq = seq[: int(lengths[j])]
+                        audio = seq.float().cpu().numpy().reshape(-1).astype(np.float32)
+                        raw_len[ci] = len(audio)
+                        # Parler emits audio frames of HOP samples; the budget is in frames.
+                        frames = -(-len(audio) // HOP)
+                        max_frames = max(max_frames, frames)
+                        # Parler stops ~9 frames short of the budget (codebook delay pattern).
+                        hit_limit = hit_limit or frames >= budget - 12
+                        chunk_audio[ci] = trim_trailing_silence(
+                            audio, sr, threshold=0.01, pad_ms=120
+                        )
+                todo = [i for i in todo if raw_len.get(i, 0) < min_samples]
+                if not todo:
+                    break
+                if attempt < empty_retries:
+                    _log(
+                        f"[parler-worker] {len(todo)} empty chunk(s); "
+                        f"regenerating ({attempt + 1}/{empty_retries})"
                     )
+            if todo:
+                # Fail loudly: an error is never cached, the kiosk falls back.
+                raise RuntimeError(
+                    f"Parler returned empty audio for {len(todo)} chunk(s) "
+                    f"after {empty_retries} retries"
+                )
             if device.startswith("cuda"):
                 torch.cuda.synchronize(device)
             generation_s = time.perf_counter() - generation_started

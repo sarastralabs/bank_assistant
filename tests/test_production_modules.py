@@ -24,10 +24,20 @@ class TestKannadaDigits(unittest.TestCase):
 
 class TestSpeakCache(unittest.TestCase):
     def test_cache_hit_no_synth(self) -> None:
+        import base64
+        import io
+
+        import numpy as np
+        import soundfile as sf
+
         from backend.tts.speak_cache import get_cached_b64, put_cached_b64
 
-        put_cached_b64("unit_test_only", "YWJj")
-        self.assertEqual(get_cached_b64("unit_test_only"), "YWJj")
+        # Real 0.5 s WAV — the cache refuses empty/too-short clips.
+        buf = io.BytesIO()
+        sf.write(buf, np.zeros(22050, dtype=np.float32), 44100, format="WAV")
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        put_cached_b64("unit_test_only", b64)
+        self.assertEqual(get_cached_b64("unit_test_only"), b64)
 
 
 if __name__ == "__main__":

@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import base64
+import io
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+import numpy as np
+import soundfile as sf
+
 from backend.tts import speak_cache
 
-_WAV = b"RIFF" + (b"\0" * 60)
+# A real 0.5 s WAV — the cache refuses empty/too-short clips.
+_buf = io.BytesIO()
+sf.write(_buf, np.zeros(22050, dtype=np.float32), 44100, format="WAV")
+_WAV = _buf.getvalue()
 _WAV_B64 = base64.b64encode(_WAV).decode("ascii")
 
 

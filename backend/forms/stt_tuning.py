@@ -63,12 +63,11 @@ def form_fill_stt_hints(field_type: str, field_id: str) -> tuple[str | None, str
                 ),
             )
         if fid in ACCOUNT_FIELD_IDS:
-            n = expected_account_length()
+            # Neutral on length: customers say the last 4, last 6, or all digits.
+            # The old "10-digit … may end in zero" prompt made Whisper add digits
+            # (spoken 7890 -> "…ಸೊನ್ನೆ ಸೊನ್ನೆ" = 78900); measured 2/4 -> 4/4.
             return (
-                (
-                    f"ಇದು {n} ಅಂಕಿಯ ಖಾತೆ ಸಂಖ್ಯೆ. ಪ್ರತಿಯೊಂದು ಅಂಕಿಯನ್ನು ಪ್ರತ್ಯೇಕವಾಗಿ "
-                    "ಹೇಳಲಾಗಿದೆ. ಕೊನೆಯಲ್ಲಿ ಸೊನ್ನೆ ಇರಬಹುದು."
-                ),
+                "ಇದು ಖಾತೆ ಸಂಖ್ಯೆಯ ಅಂಕಿಗಳು. ಪ್ರತಿಯೊಂದು ಅಂಕಿಯನ್ನು ಪ್ರತ್ಯೇಕವಾಗಿ ಹೇಳಲಾಗಿದೆ.",
                 (
                     "ಸೊನ್ನೆ ಶೂನ್ಯ ಒಂದು ಎರಡು ಮೂರು ನಾಲ್ಕು ಐದು ಆರು ಏಳು ಎಂಟು ಒಂಬತ್ತು "
                     "zero oh o one two three four five six seven eight nine"
@@ -78,7 +77,13 @@ def form_fill_stt_hints(field_type: str, field_id: str) -> tuple[str | None, str
             "ಇದು ಬ್ಯಾಂಕ್ ಅರ್ಜಿಯ ಸಂಖ್ಯೆ. ಪ್ರತಿಯೊಂದು ಅಂಕಿಯನ್ನು ಕನ್ನಡದಲ್ಲಿ ಹೇಳಲಾಗಿದೆ.",
             "ಸೊನ್ನೆ ಒಂದು ಎರಡು ಮೂರು ನಾಲ್ಕು ಐದು ಆರು ಏಳು ಎಂಟು ಒಂಬತ್ತು",
         )
-    return None, None
+    # Every other answer gets a SHORT prompt. Left at None, the transcriber falls
+    # back to its long banking prompt, which together with its hotwords leaves
+    # Whisper too little room and cuts answers mid-word: "ರಮೇಶ್ ಕುಮಾರ್" -> "ರಮೇಶ್ ಕ",
+    # "ನನ್ನ ವಿಳಾಸ ಮೂವತ್ತೆರಡು, …" -> "ನನ್ನ ವಿಳಾಸ ಮೂವತ್ತ".
+    if fid in NAME_FIELD_IDS:
+        return "ಇದು ಗ್ರಾಹಕರ ಪೂರ್ಣ ಹೆಸರು.", None
+    return "ಇದು ಬ್ಯಾಂಕ್ ಅರ್ಜಿಗೆ ಗ್ರಾಹಕರ ಉತ್ತರ.", None
 
 
 def plausible_digit_capture(digits: str, field_id: str) -> bool:
@@ -87,7 +92,8 @@ def plausible_digit_capture(digits: str, field_id: str) -> bool:
     if fid in MOBILE_FIELD_IDS:
         return len(digits) == 10
     if fid in ACCOUNT_FIELD_IDS:
-        return len(digits) == expected_account_length()
+        # Same lengths validation accepts: last 4, last 6 (shared last 4), or full.
+        return len(digits) in {4, 6, expected_account_length()}
     if fid == "number_of_leaves":
         return digits in {"10", "25", "50"}
     return bool(digits)

@@ -475,6 +475,16 @@
   color: var(--gold);
 }
 
+/* Welcome screen "How to speak" card: light card inside the white-text invite —
+   don't inherit white (headings/examples were invisible), and never grow past
+   the stage (it pushed the robot off-screen and ran under the camera bar). */
+.lobby-invite .speak-guide {
+  width: min(100%, 26rem);
+  color: var(--text);
+  max-height: 38vh;
+  overflow-y: auto;
+}
+
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 
 /* Short wide screens (1366×768 laptops): smaller robot, tighter card. */

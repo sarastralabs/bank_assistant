@@ -115,3 +115,22 @@ def test_mobile_capture_requires_all_ten_digits() -> None:
     assert plausible_digit_capture("9741447767", "mobile_number")
     assert not plausible_digit_capture("123456789", "account_number")
     assert plausible_digit_capture("1234567890", "account_number")
+
+
+def test_account_capture_accepts_last4_and_last6() -> None:
+    # Customers give the last 4 (or 6 if ambiguous) — not a reason for a numeric retry.
+    assert plausible_digit_capture("7890", "account_number")
+    assert plausible_digit_capture("222233", "account_number")
+    assert not plausible_digit_capture("78900", "account_number")
+
+
+def test_form_stt_hints_are_short_and_length_neutral() -> None:
+    from backend.forms.stt_tuning import form_fill_stt_hints
+
+    acct_prompt, _ = form_fill_stt_hints("digits", "account_number")
+    assert "10" not in acct_prompt and "ಸೊನ್ನೆ ಇರಬಹುದು" not in acct_prompt
+    name_prompt, name_hot = form_fill_stt_hints("text", "full_name")
+    assert name_prompt and len(name_prompt) < 40 and name_hot is None
+    for ftype, fid in (("text", "address"), ("amount", "amount"), ("text", "confirm")):
+        prompt, hot = form_fill_stt_hints(ftype, fid)
+        assert prompt and len(prompt) < 60 and hot is None
