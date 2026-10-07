@@ -71,41 +71,41 @@ def build_conversation_flow() -> dict[str, Any]:
     phases = [
         {
             "id": "idle",
-            "title": "Waiting",
-            "detail": "Customer steps into camera / taps Start",
+            "title": "Customer arrives",
+            "detail": "Lobby is open; the customer steps in front of the camera or taps Start.",
         },
         {
             "id": "greeting",
-            "title": "Greeting TTS",
-            "detail": "Time-of-day Kannada greeting plays; UI shows greeting text first",
+            "title": "Greeting",
+            "detail": "A time-of-day Kannada greeting appears on screen, then is spoken.",
         },
         {
             "id": "assist_listen",
-            "title": "Assist listen",
-            "detail": "Mic warms → green Listening → customer speaks request",
+            "title": "Customer speaks",
+            "detail": "The status turns green (ಈಗ ಮಾತನಾಡಿ · Speak now) and the customer says one request.",
         },
         {
             "id": "pipeline",
-            "title": "STT → NLU → Router",
-            "detail": "Kannada text, English text, intent, confidence, route",
+            "title": "Assistant understands",
+            "detail": "Speech becomes Kannada text, is translated, and matched to a banking request "
+            "with a confidence score. The screen shows 'You said' so the customer can check it.",
         },
         {
             "id": "branch",
-            "title": "Branch",
-            "detail": (
-                "informational → speak answer; transactional → open form; "
-                "form_menu → pick form; clarification → ask again"
-            ),
+            "title": "Answer or form",
+            "detail": "Questions get a spoken answer; services open a voice form; a form request "
+            "shows the form menu; if unsure, the assistant asks the customer to say it again.",
         },
         {
             "id": "form_fields",
-            "title": "Form field loop",
-            "detail": "Ask prompt → listen → confirm ಹೌದು/ಇಲ್ಲ → next field → summary",
+            "title": "Voice form",
+            "detail": "One question at a time → the answer is read back → ಹೌದು (yes) / ಇಲ್ಲ (no) → "
+            "next question → full summary → submitted and printable.",
         },
         {
             "id": "end",
-            "title": "End",
-            "detail": "Customer says ಮುಗಿಸು / goodbye, or leaves camera / admin End",
+            "title": "Finish",
+            "detail": "The customer says ಮುಗಿಸು / goodbye, steps away from the camera, or staff end the session.",
         },
     ]
 
@@ -124,8 +124,10 @@ def build_conversation_flow() -> dict[str, Any]:
         "form_menu": menu.get("forms") or [],
         "intent_map": intent_map,
         "notes": [
-            "Default language: Kannada. Wait for green Listening before speaking.",
-            "Balance needs all 10 account digits including trailing zero.",
-            "Demo accounts are listed under Customers in this admin console.",
+            "Customers speak Kannada; speak only when the status is green (Speak now).",
+            "Balance: say the last 4 digits of the account; if two accounts share them, "
+            "the assistant asks for the last 6. The full number also works.",
+            "Every number and answer is read back for confirmation — say ಇಲ್ಲ to correct it.",
+            "Demo accounts are listed under Customers in this console.",
         ],
     }

@@ -68,19 +68,33 @@ def _file_ok(rel: str, min_bytes: int = 1) -> tuple[bool, str]:
     return True, f"OK ({size // 1024} KB)" if size < 10_000_000 else f"OK ({size // (1024*1024)} MB)"
 
 
+def _user_agent() -> str:
+    """Same UA as the kiosk: Cloudflare rejects urllib's default with 403."""
+    ua = os.environ.get("BANK_TTS_REMOTE_USER_AGENT", "").strip()
+    env_path = os.path.join(ROOT, ".env")
+    if not ua and os.path.isfile(env_path):
+        with open(env_path, encoding="utf-8") as f:
+            for ln in f:
+                if ln.startswith("BANK_TTS_REMOTE_USER_AGENT="):
+                    ua = ln.split("=", 1)[1].strip().strip('"')
+    return ua or "SarastraBankAssistant/1.0"
+
+
 def _get(url: str, timeout: float = 10) -> dict:
-    with urllib.request.urlopen(url, timeout=timeout) as resp:
+    req = urllib.request.Request(url, headers={"User-Agent": _user_agent()})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read())
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Verify deployment on this machine")
     parser.add_argument("--api", default=os.environ.get("BANK_API", "http://127.0.0.1:8000"))
-    parser.add_argument("--tts", default=os.environ.get("BANK_TTS_URL", "http://127.0.0.1:8001"))
+    # Default: BANK_TTS_URL, else the kiosk's BANK_TTS_REMOTE_URL from .env, else local :8001.
+    parser.add_argument("--tts", default=None)
     parser.add_argument("--full", action="store_true", help="Run slow API pipeline test")
     args = parser.parse_args()
     api = args.api.rstrip("/")
-    tts = args.tts.rstrip("/")
+    tts = (args.tts or os.environ.get("BANK_TTS_URL", "")).rstrip("/")
     failed: list[str] = []
     warns: list[str] = []
 
@@ -175,8 +189,12 @@ def main() -> int:
         remote_url = next((ln.split("=", 1)[1].strip() for ln in lines if ln.startswith("BANK_TTS_REMOTE_URL=")), "")
         if remote_url:
             print(f"  [INFO] Remote TTS: {remote_url} — start TTS box before API")
-        tts = next((ln.split("=", 1)[1].strip() for ln in lines if ln.startswith("BANK_TTS_ENGINE=")), "")
-        if tts and tts.lower() == "parler":
+            if not tts:
+                tts = remote_url.rstrip("/")
+        # Separate name: this used to overwrite the TTS URL with the engine name,
+        # so the live check always probed "auto/api/health".
+        tts_engine = next((ln.split("=", 1)[1].strip() for ln in lines if ln.startswith("BANK_TTS_ENGINE=")), "")
+        if tts_engine and tts_engine.lower() == "parler":
             print("  [WARN] BANK_TTS_ENGINE=parler needs .venv-parler + HF model; use mms for stable demo")
     else:
         check(".env file", False, "copy .env.example → .env")
@@ -189,6 +207,8 @@ def main() -> int:
 
     # ── Live TTS (if up) ─────────────────────────────────────────────────────
     print("\nLive TTS:")
+    tts = tts or "http://127.0.0.1:8001"
+    print(f"  [INFO] Checking TTS at {tts}")
     tts_up = False
     try:
         th = _get(f"{tts}/api/health", timeout=8)

@@ -107,6 +107,85 @@ _INTEREST_PAYOUT = {
     "cumulative": "Cumulative / On maturity",
 }
 
+# Kannada option words (incl. common English loanwords as spoken) for choice fields.
+# Matched on the Kannada transcript, so a slightly misheard word ("ಉಳಿದಾಯ" for
+# "ಉಳಿತಾಯ") still lands on the right option instead of a wrong translation
+# ("Remaining").
+_KN_CHOICES: dict[str, dict[str, str]] = {
+    "account_type": {
+        "ಉಳಿತಾಯ": "Savings",
+        "ಸೇವಿಂಗ್ಸ್": "Savings",
+        "ಚಾಲ್ತಿ": "Current",
+        "ಕರೆಂಟ್": "Current",
+        "ವೇತನ": "Salary",
+        "ಸ್ಯಾಲರಿ": "Salary",
+    },
+    "loan_type": {
+        "ಗೃಹ": "Home Loan",
+        "ಮನೆ": "Home Loan",
+        "ವೈಯಕ್ತಿಕ": "Personal Loan",
+        "ಪರ್ಸನಲ್": "Personal Loan",
+        "ಶಿಕ್ಷಣ": "Education Loan",
+        "ಎಜುಕೇಶನ್": "Education Loan",
+        "ವಾಹನ": "Car Loan",
+        "ಕಾರ್": "Car Loan",
+        "ಚಿನ್ನ": "Gold Loan",
+        "ಗೋಲ್ಡ್": "Gold Loan",
+    },
+    "deposit_mode": {
+        "ನಗದು": "Cash",
+        "ಕ್ಯಾಶ್": "Cash",
+        "ಚೆಕ್": "Cheque",
+        "ಡಿಡಿ": "Demand Draft",
+    },
+    "interest_payout": {
+        "ತ್ರೈಮಾಸಿಕ": "Quarterly",
+        "ಮಾಸಿಕ": "Monthly",
+        "ತಿಂಗಳು": "Monthly",
+        "ಮುಕ್ತಾಯ": "On maturity",
+        "ಅವಧಿ ಪೂರ್ಣ": "On maturity",
+    },
+}
+
+# Choice fields whose answer MUST be one of these values. An unrecognised answer
+# returns "" (→ validation asks again, listing the options) rather than saving
+# whatever the translation produced.
+CHOICE_OPTIONS: dict[str, frozenset[str]] = {
+    "account_type": frozenset({"Savings", "Current", "Salary", "Fixed Deposit"}),
+    "loan_type": frozenset(
+        {"Home Loan", "Personal Loan", "Education Loan", "Car Loan", "Gold Loan"}
+    ),
+    "deposit_mode": frozenset({"Cash", "Cheque", "Demand Draft"}),
+    "interest_payout": frozenset(
+        {"Monthly", "Quarterly", "On maturity", "Cumulative / On maturity"}
+    ),
+}
+
+
+def _match_choice_kannada(kannada: str, field_id: str, *, fuzzy: bool = True) -> str | None:
+    """Exact Kannada option word first, then (if fuzzy) a near match one or two letters off."""
+    options = _KN_CHOICES.get(field_id)
+    text = (kannada or "").strip()
+    if not options or not text:
+        return None
+    for key in sorted(options, key=len, reverse=True):
+        if key in text:
+            return options[key]
+    if not fuzzy:
+        return None
+    from difflib import SequenceMatcher
+
+    best, best_ratio = None, 0.0
+    for word in re.findall(r"\S+", text):
+        for key, value in options.items():
+            if len(key) < 4:  # too short to fuzzy-match safely
+                continue
+            ratio = SequenceMatcher(None, word, key).ratio()
+            if ratio > best_ratio:
+                best, best_ratio = value, ratio
+    return best if best_ratio >= 0.8 else None
+
+
 _IFSC_RE = re.compile(r"\b([A-Z]{4}0[A-Z0-9]{6})\b", re.I)
 _PAN_RE = re.compile(r"\b([A-Z]{5}\d{4}[A-Z])\b", re.I)
 _MOBILE_RE = re.compile(r"\b([6-9]\d{9})\b")
@@ -403,6 +482,7 @@ def extract_field_value(
     english_text: str,
     field_type: str = "text",
     field_id: str = "",
+    kannada_text: str = "",
 ) -> str:
     """
     Turn IndicTrans2 English output into a clean form-box value.
@@ -417,20 +497,28 @@ def extract_field_value(
         Field id for specialized maps (account_type, loan_type, ifsc, …).
     """
     text = (english_text or "").strip()
-    if not text:
-        return ""
-
     fid = (field_id or "").lower()
     ftype = (field_type or "text").lower()
 
-    if fid == "deposit_mode":
-        return _match_choice(text, _DEPOSIT_MODES) or text.strip().title()
+    choice_key = "interest_payout" if fid == "interest_payment" else fid
+    if choice_key in CHOICE_OPTIONS:
+        english_map = {
+            "account_type": _ACCOUNT_TYPES,
+            "loan_type": _LOAN_TYPES,
+            "deposit_mode": _DEPOSIT_MODES,
+            "interest_payout": _INTEREST_PAYOUT,
+        }[choice_key]
+        # Customer's own Kannada word > translation > near-miss Kannada word.
+        # No match -> "" so validation re-asks with the options (never "Remaining").
+        return (
+            _match_choice_kannada(kannada_text, choice_key, fuzzy=False)
+            or _match_choice(text, english_map)
+            or _match_choice_kannada(kannada_text, choice_key)
+            or ""
+        )
 
-    if fid == "account_type":
-        return _match_choice(text, _ACCOUNT_TYPES) or text.strip().title()
-
-    if fid == "loan_type":
-        return _match_choice(text, _LOAN_TYPES) or text.strip().title()
+    if not text:
+        return ""
 
     if fid in {"card_type", "atm_card_type"}:
         return _match_choice(text, _CARD_TYPES) or "ATM / Debit Card"
@@ -444,9 +532,6 @@ def extract_field_value(
 
     if fid in {"tenure", "fd_tenure", "deposit_tenure"}:
         return _match_choice(text, _FD_TENURE) or text.strip()
-
-    if fid in {"interest_payout", "interest_payment"}:
-        return _match_choice(text, _INTEREST_PAYOUT) or text.strip().title()
 
     if fid in {"ifsc", "ifsc_code", "beneficiary_ifsc"}:
         return _extract_ifsc(text)

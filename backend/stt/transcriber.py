@@ -31,19 +31,14 @@ from faster_whisper import WhisperModel
 from backend.stt.exceptions import STTInputError
 from backend.stt.utils import is_silent, validate_audio_file
 
+# Default Kannada context — deliberately SHORT. Whisper has a 448-token window
+# shared by prompt + answer, and Kannada costs ~2-3 tokens per letter. The old long
+# prompt + 17-word hotword list left too little room and cut answers mid-word
+# ("ಎಟಿಎಂ ಕಾರ್ಡ್ ಬ್ಲಾ…"). Measured on the production GPU model, 11 real clips + 18
+# spoken requests: long = 26/29 intents, 9/29 cut off; short = 27/29, 0 cut off.
 # faster-whisper expects hotwords as a single space-separated string, not a list.
-_BANKING_HOTWORDS = (
-    "ಖಾತೆ ಸಾಲ ಠೇವಣಿ ಬ್ಯಾಂಕ್ ಬಾಕಿ ಹಿಂಪಡೆಯುವಿಕೆ ವರ್ಗಾಯಿಸು "
-    "ಬಡ್ಡಿ ಎಟಿಎಂ ಕಾರ್ಡ್ ಮೊಬೈಲ್ ಪಿನ್ ಚೆಕ್ ಶಾಖೆ "
-    "ಹೆಸರು ಪೂರ್ಣ ಹೆಸರು ನನ್ನ ಹೆಸರು"
-)
-_BANKING_INITIAL_PROMPT = (
-    "ಕನ್ನಡದಲ್ಲಿ ಮಾತನಾಡಿ. "
-    "ಖಾತೆ ಸಂಖ್ಯೆ, ಸಾಲ ಅರ್ಜಿ, ಠೇವಣಿ ಮಾಡಿ, ಹಣ ಹಿಂಪಡೆಯಿ, "
-    "ಬಡ್ಡಿ ದರ, ಎಟಿಎಂ ಕಾರ್ಡ್ ಬ್ಲಾಕ್, ಪಿನ್ ಬದಲಾಯಿಸಿ, "
-    "ಚೆಕ್ ಪುಸ್ತಕ ಬೇಕು, ಮೊಬೈಲ್ ನವೀಕರಣ, ಹೊಸ ಖಾತೆ ತೆರೆಯಿ, "
-    "ಮರುಪಾವತಿ ಮೊತ್ತ, ಶಾಖೆ ಎಲ್ಲಿದೆ, ಇಂಟರ್ನೆಟ್ ಬ್ಯಾಂಕಿಂಗ್."
-)
+_BANKING_HOTWORDS = "ಖಾತೆ ಸಾಲ ಬಾಕಿ ಬಡ್ಡಿ ಪಿನ್ ಚೆಕ್ ಕಾರ್ಡ್"
+_BANKING_INITIAL_PROMPT = "ಬ್ಯಾಂಕ್ ಗ್ರಾಹಕರ ಕನ್ನಡ ಪ್ರಶ್ನೆ."
 
 
 def _detect_device() -> str:

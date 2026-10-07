@@ -1,91 +1,68 @@
 import { useEffect, useState } from "react";
-import { checkHealth, fetchAdminMe } from "./api/client";
+import { adminLogout, checkHealth, fetchAdminMe, fetchKioskStatusLite, type KioskStatusLite } from "./api/client";
 import { clearAdminSession, getAdminUsername, isAdminLoggedIn } from "./auth/adminSession";
-import { AdminConversationFlow } from "./components/AdminConversationFlow";
-import { AdminCustomers } from "./components/AdminCustomers";
 import { AdminLogin } from "./components/AdminLogin";
-import { AdminPanel } from "./components/AdminPanel";
-import { AdminSpeechHistory } from "./components/AdminSpeechHistory";
+import { Conversations } from "./components/admin/Conversations";
+import { Customers } from "./components/admin/Customers";
+import { Forms } from "./components/admin/Forms";
+import { Guide } from "./components/admin/Guide";
+import { Overview } from "./components/admin/Overview";
+import { Settings } from "./components/admin/Settings";
+import { Icon } from "./components/admin/shared";
+import { VIEWS, viewFromHash, type AdminView } from "./components/admin/views";
 import { getLobbyUrl } from "./utils/apiBase";
 import { startVisibilityAwarePoll } from "./utils/polling";
 
-type AdminView = "lobby" | "customers" | "speech" | "flow";
-
-function viewFromHash(): AdminView {
-  const hash = (window.location.hash || "").replace(/^#/, "").toLowerCase();
-  if (hash === "customers" || hash.startsWith("customers")) return "customers";
-  if (hash === "speech" || hash === "speech-history" || hash.startsWith("speech")) return "speech";
-  if (hash === "flow" || hash === "conversation-flow" || hash.startsWith("flow")) return "flow";
-  if (hash === "form-submissions") return "lobby";
-  return "lobby";
+function lobbyPill(s: KioskStatusLite | null): { text: string; tone: string } {
+  if (!s) return { text: "Lobby …", tone: "off" };
+  if (!s.running) return { text: "Lobby closed", tone: "off" };
+  if (s.phase === "conversation" || s.phase === "greeting") return { text: "Customer at counter", tone: "busy" };
+  return { text: "Lobby open", tone: "live" };
 }
 
-const VIEW_TITLES: Record<AdminView, { kn: string; crumb: string }> = {
-  lobby: { kn: "ಲಾಬಿ ನಿಯಂತ್ರಣ", crumb: "Staff · Lobby" },
-  customers: { kn: "ಗ್ರಾಹಕರು", crumb: "Staff · Customers" },
-  speech: { kn: "ಮಾತು ಇತಿಹಾಸ", crumb: "Staff · Speech turns" },
-  flow: { kn: "ಸಂವಾದ ಹರಿವು", crumb: "Staff · Conversation flow" },
-};
-
-/** Staff console — lobby, customers, speech history, and conversation map. */
+/** Staff console — overview, conversations, forms, customers, settings, guide. */
 export function AdminApp() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [adminAuthed, setAdminAuthed] = useState(() => isAdminLoggedIn());
-  const [adminChecking, setAdminChecking] = useState(false);
-  const [view, setView] = useState<AdminView>(() => viewFromHash());
+  const [adminChecking, setAdminChecking] = useState(() => isAdminLoggedIn());
+  const [view, setView] = useState<AdminView>(() => viewFromHash(window.location.hash));
+  const [navOpen, setNavOpen] = useState(false);
+  const [lobby, setLobby] = useState<KioskStatusLite | null>(null);
   const username = getAdminUsername() ?? "Staff";
 
+  // Service health (fast liveness probe).
   useEffect(() => {
     let cancelled = false;
-    let attempts = 0;
-    let consecutiveFailures = 0;
-    let hasConnected = false;
-    const startupGraceUntil = Date.now() + 60_000;
-    const recordHealth = (ok: boolean) => {
+    let failures = 0;
+    let everOk = false;
+    const graceUntil = Date.now() + 60_000;
+    const record = (ok: boolean) => {
       if (cancelled) return;
       if (ok) {
-        hasConnected = true;
-        consecutiveFailures = 0;
+        everOk = true;
+        failures = 0;
         setConnected(true);
         return;
       }
-      if (!hasConnected && Date.now() < startupGraceUntil) return;
-      consecutiveFailures += 1;
-      if (consecutiveFailures >= 3) setConnected(false);
+      if (!everOk && Date.now() < graceUntil) return;
+      failures += 1;
+      if (failures >= 3) setConnected(false);
     };
-    const probe = () => {
-      checkHealth().then((ok) => {
-        if (cancelled) return;
-        recordHealth(ok);
-        if (!ok && attempts < 10) {
-          attempts += 1;
-          window.setTimeout(probe, 1500);
-        }
-      });
-    };
-    probe();
-    const stop = startVisibilityAwarePoll(() => {
-      checkHealth().then((ok) => {
-        recordHealth(ok);
-      });
-    }, 10000, 30000);
+    void checkHealth().then(record);
+    const stop = startVisibilityAwarePoll(() => checkHealth().then(record), 10000, 30000);
     return () => {
       cancelled = true;
       stop();
     };
   }, []);
 
+  // Validate a stored session once (it ends when the API restarts).
   useEffect(() => {
-    if (!isAdminLoggedIn()) {
-      setAdminAuthed(false);
-      return;
-    }
+    if (!isAdminLoggedIn()) return;
     let cancelled = false;
-    setAdminChecking(true);
     fetchAdminMe().then((me) => {
       if (cancelled) return;
-      if (me) setAdminAuthed(true);
-      else {
+      if (!me) {
         clearAdminSession();
         setAdminAuthed(false);
       }
@@ -96,32 +73,40 @@ export function AdminApp() {
     };
   }, []);
 
+  // Lobby state for the top bar on every page.
   useEffect(() => {
-    const onHash = () => setView(viewFromHash());
+    if (!adminAuthed) return;
+    const load = () => fetchKioskStatusLite().then(setLobby).catch(() => undefined);
+    void load();
+    return startVisibilityAwarePoll(load, 8000, 30000);
+  }, [adminAuthed]);
+
+  useEffect(() => {
+    const onHash = () => setView(viewFromHash(window.location.hash));
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
   const go = (next: AdminView) => {
-    const hash =
-      next === "lobby"
-        ? ""
-        : next === "customers"
-          ? "#customers"
-          : next === "speech"
-            ? "#speech-history"
-            : "#conversation-flow";
+    const hash = VIEWS.find((v) => v.id === next)?.hash ?? "";
     if (hash) window.location.hash = hash;
-    else if (window.location.hash) {
-      history.replaceState(null, "", window.location.pathname + window.location.search);
-    }
+    else if (window.location.hash) history.replaceState(null, "", window.location.pathname + window.location.search);
     setView(next);
+    setNavOpen(false);
+    window.scrollTo({ top: 0 });
   };
+
+  const signOut = async () => {
+    await adminLogout();
+    setAdminAuthed(false);
+  };
+
+  const openLobby = () => window.open(getLobbyUrl(), "_blank", "noopener,noreferrer");
 
   if (adminChecking) {
     return (
-      <div className="adm-gate-loading adm-gate-loading--fullscreen">
-        <span className="adm-spinner" aria-hidden />
+      <div className="ac-gate">
+        <span className="ac-spinner" aria-hidden />
         <p>Verifying session…</p>
       </div>
     );
@@ -131,158 +116,91 @@ export function AdminApp() {
     return <AdminLogin apiOnline={connected} onSuccess={() => setAdminAuthed(true)} />;
   }
 
-  const titles = VIEW_TITLES[view];
+  const meta = VIEWS.find((v) => v.id === view) ?? VIEWS[0];
+  const pill = lobbyPill(lobby);
 
   return (
-    <div className="adm-shell">
-      <aside className="adm-sidebar" aria-label="Navigation">
-        <div className="adm-sidebar-brand">
-          <span className="adm-sidebar-logo kn" aria-hidden>
+    <div className={`ac-shell ${navOpen ? "nav-open" : ""}`}>
+      <aside className="ac-sidebar" aria-label="Navigation">
+        <div className="ac-brand">
+          <span className="ac-brand-logo kn" aria-hidden>
             ಕ
           </span>
           <div>
             <strong className="kn">ಕನ್ನಡ ಧ್ವನಿ ಬ್ಯಾಂಕಿಂಗ್</strong>
-            <span>Voice banking</span>
+            <span>Staff console</span>
           </div>
         </div>
 
-        <p className="adm-sidebar-tag">Staff console</p>
-
-        <nav className="adm-sidebar-nav">
-          <button
-            type="button"
-            className={`adm-nav-item ${view === "lobby" ? "is-active" : ""}`}
-            aria-current={view === "lobby" ? "page" : undefined}
-            onClick={() => go("lobby")}
-          >
-            <svg className="adm-nav-svg" viewBox="0 0 24 24" fill="none" aria-hidden>
-              <path
-                d="M4 13h6v7H4v-7zm10-9h6v16h-6V4zM4 4h6v5H4V4z"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span>
-              <span className="kn">ಲಾಬಿ ನಿಯಂತ್ರಣ</span>
-              <span className="adm-nav-sub">Lobby control</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            className={`adm-nav-item ${view === "customers" ? "is-active" : ""}`}
-            aria-current={view === "customers" ? "page" : undefined}
-            onClick={() => go("customers")}
-          >
-            <svg className="adm-nav-svg" viewBox="0 0 24 24" fill="none" aria-hidden>
-              <path
-                d="M12 12a4 4 0 100-8 4 4 0 000 8zm-7 9a7 7 0 0114 0"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-              />
-            </svg>
-            <span>
-              <span className="kn">ಗ್ರಾಹಕರು</span>
-              <span className="adm-nav-sub">Customers & balances</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            className={`adm-nav-item ${view === "speech" ? "is-active" : ""}`}
-            aria-current={view === "speech" ? "page" : undefined}
-            onClick={() => go("speech")}
-          >
-            <svg className="adm-nav-svg" viewBox="0 0 24 24" fill="none" aria-hidden>
-              <path
-                d="M12 3v10a3 3 0 01-3 3H7l-3 3V8a5 5 0 015-5h3zm2 2h1a5 5 0 015 5v11l-3-3h-1a3 3 0 01-3-3V5z"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span>
-              <span className="kn">ಮಾತು ಇತಿಹಾಸ</span>
-              <span className="adm-nav-sub">Speech turns</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            className={`adm-nav-item ${view === "flow" ? "is-active" : ""}`}
-            aria-current={view === "flow" ? "page" : undefined}
-            onClick={() => go("flow")}
-          >
-            <svg className="adm-nav-svg" viewBox="0 0 24 24" fill="none" aria-hidden>
-              <path
-                d="M5 6h6v4H5V6zm8 0h6v4h-6V6zM5 14h6v4H5v-4zm8 2h6M8 10v4m8-4v2"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span>
-              <span className="kn">ಸಂವಾದ ಹರಿವು</span>
-              <span className="adm-nav-sub">Where speech goes</span>
-            </span>
-          </button>
-          <a className="adm-nav-item" href="/#form-submissions" onClick={() => go("lobby")}>
-            <svg className="adm-nav-svg" viewBox="0 0 24 24" fill="none" aria-hidden>
-              <path
-                d="M6 4h12v16H6V4zm2 2v12h8V6H8zm2 2h4v2h-4V8zm0 4h4v2h-4v-2z"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span>
-              <span className="kn">ಅರ್ಜಿ ಸಲ್ಲಿಕೆಗಳು</span>
-              <span className="adm-nav-sub">Form submissions</span>
-            </span>
-          </a>
+        <nav className="ac-nav">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              className={`ac-nav-item ${view === v.id ? "is-active" : ""}`}
+              aria-current={view === v.id ? "page" : undefined}
+              onClick={() => go(v.id)}
+            >
+              <Icon name={v.icon} size={20} />
+              <span>
+                <span className="ac-nav-en">{v.en}</span>
+                <span className="ac-nav-kn kn">{v.kn}</span>
+              </span>
+            </button>
+          ))}
         </nav>
 
-        <div className="adm-sidebar-foot">
-          <div
-            className={`adm-conn ${connected ? "is-on" : connected === false ? "is-off" : ""}`}
-            title={connected ? "Service connected" : connected === false ? "Service offline" : "Checking…"}
-          >
-            <span className="adm-conn-dot" aria-hidden />
+        <div className="ac-sidebar-foot">
+          <p className={`ac-conn ${connected ? "is-on" : connected === false ? "is-off" : ""}`}>
+            <span className="ac-conn-dot" aria-hidden />
             {connected ? "Service online" : connected === false ? "Service offline" : "Connecting…"}
+          </p>
+          <div className="ac-user">
+            <span className="ac-user-avatar" aria-hidden>
+              {username.charAt(0).toUpperCase()}
+            </span>
+            <span className="ac-user-name">{username}</span>
+            <button type="button" className="ac-icon-btn ac-icon-btn--dark" onClick={() => void signOut()} title="Sign out" aria-label="Sign out">
+              <Icon name="logout" size={18} />
+            </button>
           </div>
         </div>
       </aside>
+      {navOpen && <button type="button" className="ac-scrim" aria-label="Close menu" onClick={() => setNavOpen(false)} />}
 
-      <div className="adm-body">
-        <header className="adm-topbar">
-          <div className="adm-topbar-titles">
-            <p className="adm-topbar-crumb">{titles.crumb}</p>
-            <h1 className="kn">{titles.kn}</h1>
+      <div className="ac-body">
+        <header className="ac-topbar">
+          <button type="button" className="ac-icon-btn ac-menu-btn" onClick={() => setNavOpen(true)} aria-label="Open menu">
+            <Icon name="menu" size={22} />
+          </button>
+          <div className="ac-topbar-titles">
+            <h1>{meta.en}</h1>
+            <p className="kn">{meta.kn}</p>
           </div>
-          <div className="adm-topbar-actions">
-            <span className="adm-user-chip">{username}</span>
-            <button
-              type="button"
-              className="adm-btn adm-btn--outline adm-btn--sm"
-              onClick={() => window.open(getLobbyUrl(), "_blank", "noopener,noreferrer")}
-            >
-              Customer screen ↗
+          <div className="ac-topbar-actions">
+            <button type="button" className={`ac-pill ac-pill--${pill.tone}`} onClick={() => go("overview")} title="Lobby status">
+              <span className="ac-pill-dot" aria-hidden />
+              {pill.text}
+            </button>
+            <button type="button" className="ac-btn ac-btn--outline ac-btn--sm ac-hide-sm" onClick={openLobby}>
+              <Icon name="external" size={16} /> Customer screen
             </button>
           </div>
         </header>
 
-        <main className="adm-page">
-          {view === "lobby" && (
-            <AdminPanel
-              apiOnline={connected}
-              username={username}
-              onOpenLobby={() => window.open(getLobbyUrl(), "_blank", "noopener,noreferrer")}
-              onLogout={() => setAdminAuthed(false)}
-            />
-          )}
-          {view === "customers" && <AdminCustomers apiOnline={connected} />}
-          {view === "speech" && <AdminSpeechHistory apiOnline={connected} />}
-          {view === "flow" && <AdminConversationFlow apiOnline={connected} />}
+        {connected === false && (
+          <div className="ac-banner" role="alert">
+            Cannot reach the kiosk service. Check that the API is running on the kiosk PC.
+          </div>
+        )}
+
+        <main className="ac-main">
+          {view === "overview" && <Overview apiOnline={connected} onNavigate={go} onOpenLobby={openLobby} />}
+          {view === "conversations" && <Conversations apiOnline={connected} />}
+          {view === "forms" && <Forms apiOnline={connected} />}
+          {view === "customers" && <Customers apiOnline={connected} />}
+          {view === "settings" && <Settings apiOnline={connected} username={username} onSignOut={() => void signOut()} />}
+          {view === "guide" && <Guide apiOnline={connected} />}
         </main>
       </div>
     </div>

@@ -27,7 +27,15 @@ CHEQUE_LEAVES_RETRY_KN = "ದಯವಿಟ್ಟು ಹತ್ತು, ಇಪ್ಪ
 DIGITS_RETRY_KN = (
     "ಸಂಖ್ಯೆಯನ್ನು ಗುರುತಿಸಲಾಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಒಂದೊಂದೇ ಅಂಕಿಯಾಗಿ ಮತ್ತೆ ಹೇಳಿ."
 )
+# Choice fields: re-ask with the options instead of saving an unrecognised word.
+CHOICE_RETRY_KN = {
+    "account_type": "ದಯವಿಟ್ಟು ಉಳಿತಾಯ, ಚಾಲ್ತಿ ಅಥವಾ ವೇತನ ಖಾತೆ ಎಂದು ಹೇಳಿ.",
+    "loan_type": "ದಯವಿಟ್ಟು ಗೃಹ ಸಾಲ, ವೈಯಕ್ತಿಕ ಸಾಲ, ಶಿಕ್ಷಣ ಸಾಲ ಅಥವಾ ವಾಹನ ಸಾಲ ಎಂದು ಹೇಳಿ.",
+    "deposit_mode": "ದಯವಿಟ್ಟು ನಗದು ಅಥವಾ ಚೆಕ್ ಎಂದು ಹೇಳಿ.",
+    "interest_payout": "ದಯವಿಟ್ಟು ಮಾಸಿಕ, ತ್ರೈಮಾಸಿಕ ಅಥವಾ ಅವಧಿ ಪೂರ್ಣಗೊಂಡಾಗ ಎಂದು ಹೇಳಿ.",
+}
 STATIC_VALIDATION_PHRASES = (
+    *CHOICE_RETRY_KN.values(),
     DATE_RETRY_KN,
     FUTURE_DOB_KN,
     MOBILE_RETRY_KN,
@@ -47,6 +55,14 @@ def validate_captured_value(
     normalized_type = (field_type or "text").strip().lower()
     normalized_id = (field_id or "").strip().lower()
     text = (value or "").strip()
+
+    choice_key = "interest_payout" if normalized_id == "interest_payment" else normalized_id
+    if choice_key in CHOICE_RETRY_KN:
+        from backend.forms.extract import CHOICE_OPTIONS
+
+        if text not in CHOICE_OPTIONS[choice_key]:
+            return CHOICE_RETRY_KN[choice_key]
+        return None
 
     if normalized_type == "date":
         try:

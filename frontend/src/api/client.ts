@@ -935,6 +935,31 @@ export async function fetchAdminConversationFlow(): Promise<ConversationFlowData
   return res.json();
 }
 
+export interface SystemHealth {
+  status: string;
+  pipeline_worker?: boolean;
+  tts?: {
+    available?: boolean;
+    ready?: boolean;
+    speaker?: string;
+    engine_env?: string;
+    remote?: {
+      configured?: boolean;
+      url?: string;
+      healthy?: boolean;
+      ready?: boolean;
+      warmup?: { phrases_cached?: number; elapsed_s?: number; error?: string | null } | null;
+    };
+  };
+}
+
+/** Full health (pipeline + TTS box) for the staff dashboard. */
+export async function fetchSystemHealth(): Promise<SystemHealth> {
+  const res = await fetchWithTimeout(`${API_BASE}/api/health`, { timeoutMs: 12000 });
+  if (!res.ok) throw new Error(`Health check failed (${res.status})`);
+  return res.json();
+}
+
 export async function fetchAdminHistory(limit = 50): Promise<HistoryItem[]> {
   const { adminAuthHeaders } = await import("../auth/adminSession");
   const res = await fetchWithTimeout(`${API_BASE}/api/admin/history?limit=${limit}`, {

@@ -305,6 +305,7 @@ def _fill(wav: str, field_type: str, field_id: str) -> dict:
                         english,
                         field_type=field_type,
                         field_id=field_id,
+                        kannada_text=kannada,
                     )
 
             if not (value or "").strip() and (field_id or "").lower() in NAME_FIELD_IDS:

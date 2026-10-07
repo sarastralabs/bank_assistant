@@ -54,3 +54,45 @@ def test_repayment_answer_is_repayment_info_not_full_rate_list() -> None:
     # Plain rate question still gets the full list.
     rates = route("interest_rate_query", "What are your interest rates?")
     assert rates["response_text"].startswith("Here are our current interest rates")
+
+
+@pytest.mark.parametrize(
+    "kannada",
+    [
+        "ನನ್ನ ಖಾತೆ ಎಷ್ಟಿದೆ",  # live misroute: was opening the account form
+        "ಖಾತೆಯಲ್ಲಿ ಎಷ್ಟು ಹಣ ಇದೆ",
+        "ನನ್ನ ಖಾತೆಯ ಬಾಕಿ ಎಷ್ಟಿದೆ",
+        "ಬಾಕಿ ಎಷ್ಟು",
+    ],
+)
+def test_balance_questions_are_not_account_opening(kannada: str) -> None:
+    hit = match_kannada_intent(kannada, "")
+    assert hit is not None
+    assert hit[0] == "check_balance"
+
+
+@pytest.mark.parametrize(
+    "kannada",
+    [
+        "ನಾನು ಹೊಸ ಖಾತೆ ತೆರೆಯಬೇಕು",
+        "ನನ್ನ ಖಾತೆ ತೆರೆಯಬ",  # STT-truncated form seen in logs
+        "ಸೇವಿಂಗ್ಸ್ ಖಾತೆ ಬೇಕು",
+        "ಖಾತೆ ತೆಗೆಯಬೇಕು",
+    ],
+)
+def test_open_account_phrases_still_open_account(kannada: str) -> None:
+    hit = match_kannada_intent(kannada, "")
+    assert hit is not None
+    assert hit[0] == "open_account"
+
+
+def test_bare_account_word_no_longer_forces_open_account() -> None:
+    # Left to the trained model instead of a 0.71 keyword override.
+    hit = match_kannada_intent("ನನ್ನ ಖಾತೆ", "")
+    assert hit is None or hit[0] != "open_account"
+
+
+def test_interest_how_much_is_not_balance() -> None:
+    hit = match_kannada_intent("ಬಡ್ಡಿ ದರ ಎಷ್ಟಿದೆ", "")
+    assert hit is not None
+    assert hit[0] == "interest_rate_query"

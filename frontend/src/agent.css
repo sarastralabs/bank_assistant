@@ -130,21 +130,6 @@
   animation: lobby-panel-in 0.5s ease-out 0.15s both;
 }
 
-.lobby-v2 .lobby-conversation {
-  border-radius: 20px;
-  animation: lobby-panel-in 0.45s ease-out;
-}
-
-.lobby-v2 .live-subtitle {
-  font-size: clamp(1rem, 2.8vw, 1.15rem);
-  padding: 0.65rem 1rem;
-  border-radius: 14px;
-  background: rgba(26, 74, 122, 0.06);
-  border: 1px solid rgba(26, 74, 122, 0.1);
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
 /* Safe areas for notched phones */
 .lobby-shell.lobby-fit.lobby-v2 {
   padding-top: max(0.75rem, env(safe-area-inset-top));
@@ -327,14 +312,7 @@
     font-size: 0.78rem;
   }
 
-  .lobby-body-conversation .lobby-camera-mini {
-    width: 78px;
-    height: 58px;
-    top: 0.3rem;
-    right: 0.3rem;
-    border-width: 1px;
-    z-index: 4;
-  }
+  
 
   .lobby-camera-badge {
     font-size: 0.58rem;
@@ -343,14 +321,9 @@
     bottom: 0.3rem;
   }
 
-  .lobby-v2 .lobby-conversation {
-    padding: 0.45rem 0.5rem 0.6rem;
-    border-radius: 14px;
-  }
+  
 
-  .lobby-convo-hero {
-    display: none;
-  }
+  
 
   .lobby-waiting-stage {
     padding: 0 0.35rem;
@@ -366,46 +339,21 @@
     font-size: clamp(1.35rem, 6vw, 1.65rem);
   }
 
-  .handsfree-panel {
-    gap: 0.7rem;
-    padding: 0;
-    width: 100%;
-  }
+  
 
-  .handsfree-status {
-    padding: 0.75rem 0.85rem;
-    gap: 0.45rem 0.65rem;
-    border-radius: 12px;
-  }
+  
 
-  .handsfree-status-text {
-    font-size: 0.95rem;
-    line-height: 1.35;
-  }
+  
 
-  .handsfree-hint {
-    font-size: 0.82rem;
-  }
+  
 
-  .handsfree-form.panel,
-  .handsfree-result.panel {
-    padding: 0.85rem 0.8rem;
-    border-radius: 12px;
-  }
+  
 
-  .handsfree-form h2 {
-    font-size: 1.05rem;
-  }
+  
 
-  .form-step-label,
-  .form-prompt {
-    font-size: 0.9rem;
-  }
+  
 
-  .form-menu-list {
-    padding-left: 1.1rem;
-    font-size: 0.9rem;
-  }
+  
 
   .balance-result-card {
     padding: 0.85rem;
@@ -442,9 +390,7 @@
     min-height: 44px;
   }
 
-  .pipeline-progress {
-    font-size: 0.78rem;
-  }
+  
 }
 
 /* Very small phones */
@@ -464,9 +410,7 @@
     width: min(38vw, 112px);
   }
 
-  .handsfree-status-text {
-    font-size: 0.88rem;
-  }
+  
 }
 
 /* Short / landscape phones — keep controls usable */
@@ -502,9 +446,7 @@
     min-height: 90px;
   }
 
-  .lobby-convo-hero {
-    display: none;
-  }
+  
 
   .lobby-invite .speak-guide {
     max-height: 28vh;
@@ -520,6 +462,3 @@
   }
 }
 
-.handsfree-footer {
-  display: none;
-}

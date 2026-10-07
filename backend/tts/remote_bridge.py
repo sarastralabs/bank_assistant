@@ -88,8 +88,14 @@ def _request(method: str, path: str, body: dict[str, Any] | None = None) -> dict
         data = json.dumps(body).encode("utf-8")
 
     retries = max(1, int(os.environ.get("BANK_TTS_REMOTE_RETRIES", "2")))
-    last_err: Exception | None = None
-    for attempt in range(retries):
+    # The TTS box serves one request at a time and answers 429 when another is
+    # running (503 while warming). The kiosk prefetches the next prompt while one
+    # plays, so overlaps are normal — wait and retry instead of failing at once.
+    busy_wait_s = max(0.0, float(os.environ.get("BANK_TTS_BUSY_WAIT_S", "45")))
+    busy_deadline = time.monotonic() + busy_wait_s
+    busy_delay = 1.0
+    attempt = 0
+    while True:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         started = time.perf_counter()
         try:
@@ -121,13 +127,21 @@ def _request(method: str, path: str, body: dict[str, Any] | None = None) -> dict
                 raise RuntimeError(f"Remote TTS bad JSON: {raw[:200]}") from exc
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:300]
+            if exc.code in (429, 503) and time.monotonic() + busy_delay <= busy_deadline:
+                print(
+                    f"[remote-tts] busy (HTTP {exc.code}); retrying in {busy_delay:.1f}s",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                time.sleep(busy_delay)
+                busy_delay = min(busy_delay * 1.6, 5.0)
+                continue
             raise RuntimeError(f"Remote TTS HTTP {exc.code}: {detail}") from exc
         except urllib.error.URLError as exc:
-            last_err = exc
-            if attempt + 1 < retries:
+            attempt += 1
+            if attempt < retries:
                 continue
             raise RuntimeError(f"Remote TTS unreachable at {url}: {exc.reason}") from exc
-    raise RuntimeError(f"Remote TTS failed: {last_err}")
 
 
 _health_cache: dict[str, Any] = {"at": 0.0, "payload": None}
