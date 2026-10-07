@@ -17,12 +17,10 @@ import {
   type FormSummaryLine,
 } from "../api/client";
 import {
-  AgentSubtitle,
   BalanceResultCard,
   FormFilledChips,
   FormSummaryPanel,
   LiveValueCard,
-  PipelineProgress,
   type BalanceResultView,
 } from "./LiveContextPanel";
 import { SpeakGuideCard } from "./SpeakGuideCard";
@@ -98,30 +96,49 @@ function askableFields(form: BankForm) {
   return form.fields.filter((f) => !f.auto && !(f.type === "date" && f.id === "date"));
 }
 
-function statusLabel(turn: HandsFreeTurn, mode: Mode): string {
+type StatusTone = "listen" | "wait" | "think" | "speak" | "done";
+
+interface StatusView {
+  tone: StatusTone;
+  kn: string;
+  en: string;
+}
+
+/**
+ * One status for the customer — whose turn it is. Mic state wins over turn so
+ * "Listening" never shows alongside "Talking…" / "Got it".
+ */
+function statusView(turn: HandsFreeTurn, vadState: string): StatusView {
+  if (vadState === "processing_local") {
+    return { tone: "think", kn: "ಕೇಳಿದೆ ✓", en: "Got it — working on it" };
+  }
+  if (turn === "listening" && vadState === "speech") {
+    return { tone: "listen", kn: "ಕೇಳುತ್ತಿದ್ದೇನೆ…", en: "Hearing you — keep speaking" };
+  }
   switch (turn) {
     case "listening":
-      return mode === "form"
-        ? "ಕೇಳುತ್ತಿದ್ದೇನೆ — ಈಗ ಹೇಳಿ · Listening — speak now"
-        : "ಕೇಳುತ್ತಿದ್ದೇನೆ — ಈಗ ಹೇಳಿ · Listening — speak in Kannada now";
+      return { tone: "listen", kn: "ಈಗ ಮಾತನಾಡಿ", en: "Speak now in Kannada" };
     case "thinking":
-      return "ಯೋಚಿಸುತ್ತಿದ್ದೇನೆ… · Processing your speech";
-    case "preparing":
-      return "ಸಿದ್ಧಪಡಿಸಲಾಗುತ್ತಿದೆ… · Preparing — please wait, do not speak yet";
+      return { tone: "think", kn: "ಯೋಚಿಸುತ್ತಿದ್ದೇನೆ…", en: "Working on it — please wait" };
     case "speaking":
-      return "ಉತ್ತರ ನೀಡುತ್ತಿದ್ದೇನೆ… · Agent speaking — please listen";
     case "form_prompt":
-      return "ಮುಂದಿನ ಪ್ರಶ್ನೆಯನ್ನು ಕೇಳುತ್ತಿದ್ದೇನೆ… · Asking next field";
     case "form_confirm":
-      return "ದೃಢೀಕರಿಸಿ — ಹೌದು ಅಥವಾ ಮತ್ತೆ ಹೇಳಿ";
+      return { tone: "speak", kn: "ಕೇಳಿರಿ…", en: "Listen — I am speaking" };
     case "form_summary_confirm":
-      return "ಎಲ್ಲವೂ ಸರಿಯಾಗಿದೆಯೇ? ಹೌದು ಅಥವಾ ಇಲ್ಲ ಎಂದು ಹೇಳಿ";
+      return { tone: "speak", kn: "ಹೌದು ಅಥವಾ ಇಲ್ಲ", en: "Is everything correct?" };
     case "form_preview":
-      return "ಅರ್ಜಿ ಸಿದ್ಧ · Form ready to print";
+      return { tone: "done", kn: "ಅರ್ಜಿ ಸಿದ್ಧ", en: "Form ready" };
+    case "preparing":
     default:
-      return "ಸಿದ್ಧ · Ready";
+      return { tone: "wait", kn: "ಸ್ವಲ್ಪ ಕಾಯಿರಿ…", en: "Please wait — don't speak yet" };
   }
 }
+
+/** Hints that only repeat what the status line or the card already say. */
+const REDUNDANT_HINT =
+  /Agent is speaking|Preparing voice|Speak now in Kannada|Mic warming|Getting microphone|^ಅರ್ಜಿ:|^ನಿಮಗೆ ಏನು ಸಹಾಯ ಬೇಕು/i;
+
+const TRY_SAYING_KN = ["ಖಾತೆ ಬ್ಯಾಲೆನ್ಸ್", "ಹೊಸ ಖಾತೆ ತೆರೆಯಬೇಕು", "ಸಾಲ ಬೇಕು", "ಬಡ್ಡಿ ದರ ಎಷ್ಟು?"];
 
 /** Let React paint subtitle / status before starting TTS or mic work. */
 function waitForUiPaint(): Promise<void> {
@@ -196,6 +213,10 @@ export function HandsFreeConversation({
   const [summaryActiveIndex, setSummaryActiveIndex] = useState(-1);
   const [balanceResult, setBalanceResult] = useState<BalanceResultView | null>(null);
   const [submitWarning, setSubmitWarning] = useState<string | null>(null);
+  /** Last thing STT heard from the customer — shown so they can catch mishearings. */
+  const [heardRaw, setHeard] = useState<string | null>(null);
+  // Whisper sometimes stops mid-character and returns U+FFFD — don't show "�" to customers.
+  const heard = heardRaw?.replace(/�/g, "").trim() || null;
 
   const onEndRef = useRef(onRequestEnd);
   onEndRef.current = onRequestEnd;
@@ -281,6 +302,7 @@ export function HandsFreeConversation({
     });
 
     const rememberTurn = (result: PipelineResult) => {
+      setHeard(result.kannada_text?.trim() || null);
       if (result.kannada_text) {
         dialogRef.current.last_kannada_text = result.kannada_text;
       }
@@ -570,10 +592,17 @@ export function HandsFreeConversation({
               setHint(bal.message_kn);
               await playKannadaLine(bal.message_kn);
               if (!bal.found) {
+                // Ambiguous — multiple accounts share last 4 digits — ask for 6
+                const askFor6 = (bal as Record<string, unknown>).ambiguous === true;
                 session = {
                   ...session,
                   fieldIndex: 0,
-                  values: { ...session.values, account_number: "" },
+                  values: {
+                    ...session.values,
+                    account_number: askFor6
+                      ? (acct?.slice(-4) ?? "")  // keep what they said so hint shows it
+                      : "",
+                  },
                   skipFirstFieldPrompt: false,
                 };
                 setSession(session);
@@ -600,34 +629,65 @@ export function HandsFreeConversation({
             await playKannadaLine(summary.confirm_prompt_kn || FORM_WHOLE_CONFIRM_KN);
             if (!still()) return;
 
-            setHint("ಹೌದು ಅಥವಾ ಇಲ್ಲ ಎಂದು ಹೇಳಿ · Say yes or no");
-            const confirmBlob = await listenForSpeech({ silenceMs: 1200, minSpeechMs: 350 });
-            if (!still()) return;
-            if (!confirmBlob) {
-              setHint("ದಯವಿಟ್ಟು ಹೌದು ಅಥವಾ ಇಲ್ಲ ಎಂದು ಹೇಳಿ");
-              continue;
+            // Local retry loop for yes/no — do NOT replay the whole summary on
+            // an unrecognized answer. Only re-ask "yes or no" and listen again.
+            // After 3 failed attempts, restart from the first field to avoid
+            // getting stuck forever on noisy/garbled input.
+            let confirmed = false;
+            let restartForm = false;
+            let confirmAttempts = 0;
+            const MAX_CONFIRM_ATTEMPTS = 3;
+
+            while (still() && !confirmed && confirmAttempts < MAX_CONFIRM_ATTEMPTS) {
+              confirmAttempts += 1;
+              setHint("ಹೌದು ಅಥವಾ ಇಲ್ಲ ಎಂದು ಹೇಳಿ · Say yes or no");
+              const confirmBlob = await listenForSpeech({ silenceMs: 1200, minSpeechMs: 350 });
+              if (!still()) return;
+              if (!confirmBlob) {
+                setHint("ದಯವಿಟ್ಟು ಹೌದು ಅಥವಾ ಇಲ್ಲ ಎಂದು ಹೇಳಿ");
+                continue;
+              }
+
+              setTurn("thinking");
+              const confirmExt = confirmBlob.type.includes("ogg") ? "ogg" : "webm";
+              const confirmFill = await fillFormFieldAudio(
+                confirmBlob,
+                "text",
+                "confirm",
+                `whole-confirm.${confirmExt}`,
+              );
+              if (!still()) return;
+              setHeard(confirmFill.kannada_text?.trim() || null);
+
+              const parts = [
+                confirmFill.kannada_text,
+                confirmFill.english_text,
+                confirmFill.value,
+              ];
+              if (isEndSessionCommand(...parts)) {
+                onEndRef.current("Customer ended during form summary");
+                return;
+              }
+              if (isRejectCommand(...parts)) {
+                restartForm = true;
+                break;
+              }
+              if (isAffirmCommand(...parts)) {
+                confirmed = true;
+                break;
+              }
+              // Unrecognized — re-ask yes/no, do NOT replay the summary
+              setTurn("form_summary_confirm");
+              setHint("ಹೌದು ಅಥವಾ ಇಲ್ಲ ಎಂದು ಮಾತ್ರ ಹೇಳಿ · Please say only yes or no");
+              if (confirmAttempts < MAX_CONFIRM_ATTEMPTS) {
+                await playKannada("ಹೌದು ಅಥವಾ ಇಲ್ಲ ಎಂದು ಹೇಳಿ");
+                if (!still()) return;
+              }
             }
 
-            setTurn("thinking");
-            const confirmExt = confirmBlob.type.includes("ogg") ? "ogg" : "webm";
-            const confirmFill = await fillFormFieldAudio(
-              confirmBlob,
-              "text",
-              "confirm",
-              `whole-confirm.${confirmExt}`,
-            );
             if (!still()) return;
 
-            const parts = [
-              confirmFill.kannada_text,
-              confirmFill.english_text,
-              confirmFill.value,
-            ];
-            if (isEndSessionCommand(...parts)) {
-              onEndRef.current("Customer ended during form summary");
-              return;
-            }
-            if (isRejectCommand(...parts)) {
+            if (restartForm) {
               setHint("ಮೊದಲ ಪ್ರಶ್ನೆಯಿಂದ ಮತ್ತೆ ಪ್ರಾರಂಭಿಸೋಣ");
               session = { ...session, fieldIndex: 0 };
               setSession(session);
@@ -636,8 +696,18 @@ export function HandsFreeConversation({
               setError(null);
               continue;
             }
-            if (!isAffirmCommand(...parts)) {
-              setHint("ದಯವಿಟ್ಟು ಹೌದು ಅಥವಾ ಇಲ್ಲ ಎಂದು ಹೇಳಿ");
+
+            if (!confirmed) {
+              // Gave up after MAX_CONFIRM_ATTEMPTS — restart from first field
+              // rather than looping forever on noisy input.
+              setHint("ಅರ್ಥವಾಗಲಿಲ್ಲ — ಮೊದಲ ಪ್ರಶ್ನೆಯಿಂದ ಮತ್ತೆ ಪ್ರಾರಂಭಿಸೋಣ");
+              await playKannada("ಅರ್ಥವಾಗಲಿಲ್ಲ. ಮೊದಲ ಪ್ರಶ್ನೆಯಿಂದ ಮತ್ತೆ ಪ್ರಾರಂಭಿಸೋಣ.");
+              if (!still()) return;
+              session = { ...session, fieldIndex: 0 };
+              setSession(session);
+              setSummaryLines([]);
+              setDraft("");
+              setError(null);
               continue;
             }
 
@@ -647,7 +717,7 @@ export function HandsFreeConversation({
             if (!still()) return;
 
             try {
-              await submitFormSubmission({
+              const submitResult = await submitFormSubmission({
                 form_id: session.form.id,
                 title_kn: session.form.title_kn,
                 title_en: session.form.title_en,
@@ -655,10 +725,23 @@ export function HandsFreeConversation({
                 kiosk_session_id: kioskSessionRef.current ?? undefined,
               });
               setSubmitWarning(null);
+              // Speak the confirmation to the customer
+              const confirmKn = (submitResult as Record<string, unknown>).confirmation_kn as string | undefined;
+              const confirmEn = (submitResult as Record<string, unknown>).confirmation_en as string | undefined;
+              const confirmText = confirmKn || confirmEn || "ನಿಮ್ಮ ಅರ್ಜಿಯನ್ನು ಸ್ವೀಕರಿಸಲಾಗಿದೆ. ದಯವಿಟ್ಟು ಹತ್ತಿರದ ಶಾಖೆಗೆ ಭೇಟಿ ನೀಡಿ. ಧನ್ಯವಾದಗಳು.";
+              if (still()) {
+                setTurn("speaking");
+                setSubtitle(confirmText);
+                await playKannadaLine(confirmText);
+              }
             } catch {
               setSubmitWarning(
                 "ಅರ್ಜಿಯನ್ನು ಉಳಿಸಲಾಗಲಿಲ್ಲ — ಆದರೂ ಮುದ್ರಿಸಬಹುದು · Save failed, print still works",
               );
+              // Still speak a fallback confirmation
+              if (still()) {
+                await playKannadaLine("ನಿಮ್ಮ ಅರ್ಜಿ ಸಿದ್ಧವಾಗಿದೆ. ದಯವಿಟ್ಟು ಹತ್ತಿರದ ಶಾಖೆಗೆ ಭೇಟಿ ನೀಡಿ.");
+              }
             }
 
             setSession(null);
@@ -720,6 +803,7 @@ export function HandsFreeConversation({
           const ext = blob.type.includes("ogg") ? "ogg" : "webm";
           const filled = await fillFormFieldAudio(blob, field.type, field.id, `field.${ext}`);
           if (!still()) return;
+          setHeard(filled.kannada_text?.trim() || null);
 
           const skipSource = `${filled.kannada_text} ${filled.english_text} ${filled.value}`;
           if (isEndSessionCommand(filled.kannada_text, filled.english_text)) {
@@ -742,6 +826,7 @@ export function HandsFreeConversation({
               values: { ...session.values, [field.id]: "" },
             };
             setSession(session);
+            setError(null);
             continue;
           }
 
@@ -808,6 +893,7 @@ export function HandsFreeConversation({
             `confirm.${confirmExt}`,
           );
           if (!still()) return;
+          setHeard(confirmFill.kannada_text?.trim() || null);
 
           const parts = [
             confirmFill.kannada_text,
@@ -843,6 +929,7 @@ export function HandsFreeConversation({
           };
           setSession(session);
           setDraft("");
+          setError(null);
         } catch (err) {
           if (!still()) return;
           if (isAbortError(err)) return;
@@ -885,6 +972,12 @@ export function HandsFreeConversation({
             await playKannada("ದಯವಿಟ್ಟು ಮತ್ತೆ ಹೇಳಿ");
             emptyListenCount = 0;
           }
+          // After 8 empty listens (~3 min of silence) — end session automatically
+          if (emptyListenCount >= 8) {
+            await playKannada("ಯಾವುದೇ ಪ್ರತಿಕ್ರಿಯೆ ಇಲ್ಲ. ಸೆಷನ್ ಮುಗಿಸಲಾಗುತ್ತಿದೆ. ಧನ್ಯವಾದಗಳು.");
+            onEndRef.current("Auto-ended: no speech detected for extended period");
+            return;
+          }
           continue;
         }
         emptyListenCount = 0;
@@ -893,6 +986,8 @@ export function HandsFreeConversation({
         setTurn("thinking");
         try {
           const ext = blob.type.includes("ogg") ? "ogg" : "webm";
+          // Text only: the reply shows on screen at once and is spoken via
+          // /api/speak-kannada, so TTS never holds the single STT/NLU worker.
           const result = await processAudio(
             blob,
             `lobby.${ext}`,
@@ -1030,137 +1125,222 @@ export function HandsFreeConversation({
     onTurnRef.current?.(turn);
   }, [turn]);
 
-  const micPct = Math.min(100, Math.round(micLevel * 400));
+  const micPct = Math.min(100, Math.round(micLevel * 800));
   const form = formSession?.form ?? null;
   const fieldIndex = formSession?.fieldIndex ?? 0;
   const values = formSession?.values ?? {};
   const askFields = form ? askableFields(form) : [];
   const currentField = askFields[fieldIndex] ?? null;
 
-  return (
-    <div className="handsfree-panel">
-      <AgentSubtitle text={subtitle} />
-      <PipelineProgress
-        active={turn === "thinking"}
-        mode={mode === "form" || mode === "form_select" ? "form" : "assist"}
-      />
+  const status = statusView(turn, vadState);
+  const shownError = error ?? vadError;
+  const agentLine = subtitle?.trim() || null;
+  const stepTotal = askFields.length;
+  const stepNow = Math.min(fieldIndex + 1, stepTotal);
+  const progressPct = stepTotal
+    ? Math.round((Math.min(fieldIndex, stepTotal) / stepTotal) * 100)
+    : 0;
+  const inSummary =
+    (turn === "form_summary_confirm" || summaryLines.length > 0) && turn !== "form_preview";
 
-      <div className={`handsfree-status turn-${turn}`} aria-live="polite">
-        <span className="handsfree-pulse" aria-hidden />
-        <p className="handsfree-status-text">{statusLabel(turn, mode)}</p>
-        {hint && <p className="handsfree-hint">{hint}</p>}
-        {vadState === "speech" && <p className="handsfree-hint">ಮಾತನಾಡುತ್ತಿದ್ದೀರಿ…</p>}
+  // In a form the current question is the headline — never repeat it as a second bubble.
+  const formAgentLine =
+    agentLine && agentLine !== currentField?.prompt_kn && agentLine !== shownError
+      ? agentLine
+      : null;
+  // The balance card already shows its own message.
+  const assistText =
+    agentLine && agentLine !== balanceResult?.message_kn
+      ? agentLine
+      : !balanceResult
+        ? lastResult?.response_text_kn?.trim() || null
+        : null;
+  const shownHint =
+    hint &&
+    !REDUNDANT_HINT.test(hint) &&
+    hint !== agentLine &&
+    hint !== shownError &&
+    hint !== balanceResult?.message_kn
+      ? hint
+      : null;
+
+  return (
+    <div className={`hf hf-mode-${mode}`}>
+      <div className={`hf-status hf-tone-${status.tone}`} aria-live="polite">
+        <span className="hf-status-dot" aria-hidden />
+        <div className="hf-status-text">
+          <p className="hf-status-kn">{status.kn}</p>
+          <p className="hf-status-en">{status.en}</p>
+        </div>
         {turn === "listening" && (
-          <div className="handsfree-mic-meter" aria-hidden>
-            <div className="handsfree-mic-fill" style={{ width: `${micPct}%` }} />
+          <div className="hf-meter" aria-hidden>
+            <div className="hf-meter-fill" style={{ width: `${micPct}%` }} />
           </div>
         )}
       </div>
+      {shownHint && <p className="hf-hint">{shownHint}</p>}
 
-      {(error || vadError) && <p className="api-warning">{error ?? vadError}</p>}
-      {submitWarning && <p className="api-warning api-warning--soft">{submitWarning}</p>}
+      <section className="hf-card">
+        {mode === "form" && form ? (
+          <>
+            <header className="hf-form-head">
+              <div className="hf-form-titles">
+                <h2 className="hf-form-title">{form.title_kn}</h2>
+                <p className="hf-form-sub">{form.title_en}</p>
+              </div>
+              {turn !== "form_preview" && !inSummary && stepTotal > 0 && (
+                <p className="hf-step">
+                  {stepNow} / {stepTotal}
+                </p>
+              )}
+            </header>
+            {turn !== "form_preview" && stepTotal > 0 && (
+              <div className="hf-progress" aria-hidden>
+                <span style={{ width: `${inSummary ? 100 : progressPct}%` }} />
+              </div>
+            )}
 
-      <SpeakGuideCard compact />
+            {formAgentLine && turn !== "form_preview" && (
+              <p className="hf-agent-line">{formAgentLine}</p>
+            )}
 
-      {balanceResult && <BalanceResultCard result={balanceResult} />}
+            {inSummary && (
+              <FormSummaryPanel lines={summaryLines} activeIndex={summaryActiveIndex} />
+            )}
 
-      {mode === "assist" && lastResult?.response_text_kn && (
-        <section className="handsfree-result panel">
-          <p className="response-text-kn">{lastResult.response_text_kn}</p>
-          {lastResult.route === "transactional" && lastResult.form_id && (
-            <p className="handsfree-hint">ಅರ್ಜಿ ತೆರೆಯಲಾಗುತ್ತಿದೆ… · Opening form</p>
-          )}
-        </section>
-      )}
+            {turn !== "form_preview" && !inSummary && currentField && (
+              <div className="hf-question">
+                <p className="hf-question-label">
+                  {currentField.label_kn}
+                  {currentField.label_en ? ` · ${currentField.label_en}` : ""}
+                </p>
+                <p className="hf-question-text">
+                  {currentField.prompt_kn || currentField.label_kn}
+                </p>
+              </div>
+            )}
 
-      {mode === "form_select" && formMenuItems.length > 0 && (
-        <section className="handsfree-form panel">
-          <h2>ಅರ್ಜಿಯನ್ನು ಆಯ್ಕೆ ಮಾಡಿ · Choose a form</h2>
-          <ol className="form-menu-list">
-            {formMenuItems.map((item) => (
-              <li key={item.id}>
-                <strong>{item.index}.</strong> {item.title_kn}
-                <span className="muted"> · {item.title_en}</span>
-              </li>
-            ))}
-          </ol>
-          <p className="handsfree-hint">ಅರ್ಜಿಯ ಸಂಖ್ಯೆ ಅಥವಾ ಹೆಸರನ್ನು ಹೇಳಿ · Say the number or form name</p>
-        </section>
-      )}
+            {turn !== "form_preview" && currentField && draft && (
+              <LiveValueCard
+                label={currentField.label_kn}
+                value={draft}
+                fieldType={currentField.type}
+                fieldId={currentField.id}
+              />
+            )}
 
-      {mode === "form" && form && (
-        <section className="handsfree-form panel">
-          <h2>{form.title_kn}</h2>
-          <p className="muted">{form.title_en}</p>
-
-          {(turn === "form_summary_confirm" || summaryLines.length > 0) && turn !== "form_preview" && (
-            <FormSummaryPanel lines={summaryLines} activeIndex={summaryActiveIndex} />
-          )}
-
-          {turn !== "form_preview" && currentField && (
-            <>
-              <p className="form-step-label">
-                {fieldIndex + 1} / {askFields.length} · {currentField.label_kn}
+            {shownError && (
+              <p className="hf-retry" role="alert">
+                {shownError}
               </p>
-              <p className="form-prompt">{currentField.prompt_kn}</p>
-              {(turn === "form_confirm" || draft) && (
-                <LiveValueCard
-                  label={currentField.label_kn}
-                  value={draft}
-                  fieldType={currentField.type}
-                  fieldId={currentField.id}
-                />
-              )}
-            </>
-          )}
+            )}
 
-          <FormFilledChips
-            fields={askFields}
-            values={values}
-            currentFieldId={currentField?.id}
-          />
+            {turn !== "form_preview" && (
+              <FormFilledChips
+                fields={askFields}
+                values={values}
+                currentFieldId={currentField?.id}
+              />
+            )}
 
-          {turn === "form_preview" && (
-            <article className="bank-form-sheet" id="bank-form-print">
-              <div className="bank-form-sheet-header">
-                <p className="bank-form-bank">Banking Services</p>
-                <h2>{form.title_en}</h2>
-              </div>
-              <dl className="bank-form-fields">
-                {form.fields.map((f) => (
-                  <div key={f.id} className="bank-form-row">
-                    <dt>{f.label_en}</dt>
-                    <dd>
-                      {values[f.id]?.trim()
-                        ? displayFieldValue(f.id, f.type, values[f.id])
-                        : "—"}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              {(form.disclaimer_kn || form.disclaimer_en) && (
-                <footer className="bank-form-disclaimer-block">
-                  {form.disclaimer_kn && (
-                    <p className="bank-form-disclaimer kn">{form.disclaimer_kn}</p>
-                  )}
-                  {form.disclaimer_en && (
-                    <p className="bank-form-disclaimer en">{form.disclaimer_en}</p>
-                  )}
-                </footer>
-              )}
-              <div className="form-preview-actions no-print">
-                <button type="button" className="primary-btn" onClick={() => window.print()}>
-                  Print / Save PDF
-                </button>
-              </div>
-            </article>
-          )}
-        </section>
+            {turn === "form_preview" && (
+              <article className="bank-form-sheet" id="bank-form-print">
+                <div className="bank-form-sheet-header">
+                  <p className="bank-form-bank">Banking Services</p>
+                  <h2>{form.title_en}</h2>
+                </div>
+                <dl className="bank-form-fields">
+                  {form.fields.map((f) => (
+                    <div key={f.id} className="bank-form-row">
+                      <dt>{f.label_en}</dt>
+                      <dd>
+                        {values[f.id]?.trim()
+                          ? displayFieldValue(f.id, f.type, values[f.id])
+                          : "—"}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                {(form.disclaimer_kn || form.disclaimer_en) && (
+                  <footer className="bank-form-disclaimer-block">
+                    {form.disclaimer_kn && (
+                      <p className="bank-form-disclaimer kn">{form.disclaimer_kn}</p>
+                    )}
+                    {form.disclaimer_en && (
+                      <p className="bank-form-disclaimer en">{form.disclaimer_en}</p>
+                    )}
+                  </footer>
+                )}
+                <div className="form-preview-actions no-print">
+                  <button type="button" className="primary-btn" onClick={() => window.print()}>
+                    Print / Save PDF
+                  </button>
+                </div>
+              </article>
+            )}
+          </>
+        ) : mode === "form_select" && formMenuItems.length > 0 ? (
+          <>
+            <h2 className="hf-form-title">ಅರ್ಜಿಯನ್ನು ಆಯ್ಕೆ ಮಾಡಿ</h2>
+            <p className="hf-form-sub">Choose a form — say its number or name</p>
+            <ol className="hf-menu">
+              {formMenuItems.map((item) => (
+                <li key={item.id}>
+                  <span className="hf-menu-num">{item.index}</span>
+                  <span className="hf-menu-kn">{item.title_kn}</span>
+                  <span className="hf-menu-en">{item.title_en}</span>
+                </li>
+              ))}
+            </ol>
+            {shownError && (
+              <p className="hf-retry" role="alert">
+                {shownError}
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            {balanceResult && <BalanceResultCard result={balanceResult} />}
+            {assistText ? (
+              <p className="hf-agent-text">{assistText}</p>
+            ) : (
+              !balanceResult && (
+                <div className="hf-welcome">
+                  <p className="hf-agent-text">ನಿಮಗೆ ಏನು ಸಹಾಯ ಬೇಕು?</p>
+                  <p className="hf-agent-en">How can I help you? For example, say:</p>
+                  <ul className="hf-try">
+                    {TRY_SAYING_KN.map((phrase) => (
+                      <li key={phrase}>“{phrase}”</li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            )}
+            {lastResult?.route === "transactional" && lastResult.form_id && (
+              <p className="hf-note">ಅರ್ಜಿ ತೆರೆಯಲಾಗುತ್ತಿದೆ… · Opening form</p>
+            )}
+            {shownError && (
+              <p className="hf-retry" role="alert">
+                {shownError}
+              </p>
+            )}
+          </>
+        )}
+
+        {submitWarning && <p className="hf-retry hf-retry--soft">{submitWarning}</p>}
+      </section>
+
+      {heard && (
+        <p className="hf-heard">
+          <span className="hf-heard-label">ನೀವು ಹೇಳಿದ್ದು · You said</span>
+          <span className="hf-heard-text">“{heard}”</span>
+        </p>
       )}
 
-      <p className="handsfree-footer muted" aria-hidden>
-        ಕೈ ಬಳಸದೆ ಸಂವಾದಿಸಿ · ಮುಗಿಸಲು &quot;ಮುಗಿಸು&quot; ಎಂದು ಹೇಳಿ
-      </p>
+      <footer className="hf-footer">
+        <SpeakGuideCard compact />
+        <p className="hf-end-tip">ಮುಗಿಸಲು “ಮುಗಿಸು” ಎಂದು ಹೇಳಿ · Say “ಮುಗಿಸು” to finish</p>
+      </footer>
     </div>
   );
 }

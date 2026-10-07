@@ -38,7 +38,11 @@ _BANKING_HOTWORDS = (
     "ಹೆಸರು ಪೂರ್ಣ ಹೆಸರು ನನ್ನ ಹೆಸರು"
 )
 _BANKING_INITIAL_PROMPT = (
-    "ಕನ್ನಡದಲ್ಲಿ ಮಾತನಾಡಿ. ಖಾತೆ, ಸಾಲ, ಠೇವಣಿ, ಹಿಂಪಡೆಯುವಿಕೆ, ಬ್ಯಾಂಕ್."
+    "ಕನ್ನಡದಲ್ಲಿ ಮಾತನಾಡಿ. "
+    "ಖಾತೆ ಸಂಖ್ಯೆ, ಸಾಲ ಅರ್ಜಿ, ಠೇವಣಿ ಮಾಡಿ, ಹಣ ಹಿಂಪಡೆಯಿ, "
+    "ಬಡ್ಡಿ ದರ, ಎಟಿಎಂ ಕಾರ್ಡ್ ಬ್ಲಾಕ್, ಪಿನ್ ಬದಲಾಯಿಸಿ, "
+    "ಚೆಕ್ ಪುಸ್ತಕ ಬೇಕು, ಮೊಬೈಲ್ ನವೀಕರಣ, ಹೊಸ ಖಾತೆ ತೆರೆಯಿ, "
+    "ಮರುಪಾವತಿ ಮೊತ್ತ, ಶಾಖೆ ಎಲ್ಲಿದೆ, ಇಂಟರ್ನೆಟ್ ಬ್ಯಾಂಕಿಂಗ್."
 )
 
 
@@ -223,7 +227,13 @@ class KannadaTranscriber:
 
         # Segments are a lazy generator — iterate to materialise them
         text = " ".join(seg.text.strip() for seg in segments).strip()
+        # A decode that stops mid-character leaves U+FFFD — never pass it on to NLU/forms.
+        text = text.replace("�", "").strip()
 
         self.last_inference_time_s = time.perf_counter() - t_start
+
+        # Apply post-processing corrections for common Whisper Kannada mistakes
+        from backend.stt.corrections import apply_corrections
+        text = apply_corrections(text)
 
         return text

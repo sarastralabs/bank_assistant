@@ -33,10 +33,10 @@ export function playBase64Wav(audioB64: string, signal?: AbortSignal): Promise<v
     audio.onended = () => {
       signal?.removeEventListener("abort", onAbort);
       cleanup();
-      // POST-PLAYBACK SILENCE: wait 800ms after audio ends before resolving.
-      // This prevents the VAD from picking up audio echo/reverb from speakers
-      // and re-transcribing the bot's own response as the next user query.
-      window.setTimeout(resolve, 800);
+      // POST-PLAYBACK SILENCE: wait 2000ms after audio ends before resolving.
+      // Prevents VAD picking up bot's own voice echo as next user input.
+      // 2000ms needed for Parler TTS which can be loud and cause reverb.
+      window.setTimeout(resolve, 2000);
     };
     audio.onerror = () => {
       signal?.removeEventListener("abort", onAbort);

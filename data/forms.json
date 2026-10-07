@@ -20,9 +20,9 @@
       "fields": [
         {
           "id": "account_number",
-          "label_kn": "ಖಾತೆ ಸಂಖ್ಯೆ",
-          "label_en": "Account number",
-          "prompt_kn": "ದಯವಿಟ್ಟು ನಿಮ್ಮ ಖಾತೆ ಸಂಖ್ಯೆಯನ್ನು ಹೇಳಿ",
+          "label_kn": "ಖಾತೆ ಸಂಖ್ಯೆಯ ಕೊನೆಯ 4 ಅಂಕಿಗಳು",
+          "label_en": "Last 4 digits of account number",
+          "prompt_kn": "ದಯವಿಟ್ಟು ನಿಮ್ಮ ಖಾತೆ ಸಂಖ್ಯೆಯ ಕೊನೆಯ ನಾಲ್ಕು ಅಂಕಿಗಳನ್ನು ಹೇಳಿ",
           "type": "digits",
           "required": true
         }
@@ -135,7 +135,7 @@
     {
       "id": "open_account",
       "category": "account",
-      "source_note": "Simplified individual Account Opening Form (AOF) — common fields from PSB / Axis / Indian Bank individual AOF (name, DOB, address, mobile, PAN, account type). Full KYC annexures omitted for voice demo.",
+      "source_note": "Simplified individual Account Opening Form (AOF) — common fields from PSB / Axis / Indian Bank individual AOF (name, DOB, address, mobile, account type). PAN omitted — alphanumeric codes are unreliable over voice/STT; collected in-branch instead. Full KYC annexures omitted for voice demo.",
       "title_kn": "ವೈಯಕ್ತಿಕ ಖಾತೆ ತೆರೆಯುವ ಅರ್ಜಿ",
       "title_en": "Individual account opening form",
       "description_kn": "ಹೊಸ ಉಳಿತಾಯ / ಚಾಲ್ತಿ ಖಾತೆ ತೆರೆಯಲು ಅಗತ್ಯವಿರುವ ಮೂಲ ವಿವರಗಳು.",
@@ -171,14 +171,6 @@
           "label_en": "Mobile number",
           "prompt_kn": "ನಿಮ್ಮ ಹತ್ತು ಅಂಕಿಯ ಮೊಬೈಲ್ ಸಂಖ್ಯೆಯನ್ನು ಹೇಳಿ",
           "type": "digits",
-          "required": true
-        },
-        {
-          "id": "pan",
-          "label_kn": "ಪ್ಯಾನ್ ಸಂಖ್ಯೆ",
-          "label_en": "PAN number",
-          "prompt_kn": "ನಿಮ್ಮ ಪ್ಯಾನ್ ಸಂಖ್ಯೆಯನ್ನು ಹೇಳಿ",
-          "type": "text",
           "required": true
         },
         {

@@ -1,7 +1,7 @@
 """
 backend/nlu/train.py
 
-Fine-tune distilbert-base-uncased on the 294-sentence banking intent dataset.
+Fine-tune distilbert-base-uncased on the 301-sentence banking intent dataset.
 
 Run once on the GPU dev machine.  The saved checkpoint is CPU-loadable
 (standard HuggingFace safetensors format — no GPU lock).
@@ -207,6 +207,13 @@ def train(args: argparse.Namespace) -> None:
     print(f"  output dir    : {output_dir}\n")
 
     os.makedirs(output_dir, exist_ok=True)
+
+    # Warn if a checkpoint already exists — avoids silently overwriting a good model
+    existing_checkpoint = os.path.join(output_dir, "model.safetensors")
+    if os.path.isfile(existing_checkpoint):
+        print(f"\n  [WARN] Existing checkpoint found at: {output_dir}")
+        print("         This run will overwrite it if val accuracy improves.")
+        print("         To keep the old model, back it up first.\n")
 
     # --- Training loop ---
     # 1. EPOCHS + EARLY STOPPING

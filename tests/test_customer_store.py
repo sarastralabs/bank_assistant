@@ -59,7 +59,7 @@ class TestCustomerStore(unittest.TestCase):
 
             self.assertEqual(init_customer_db(), "sqlite")
             seeded = seed_from_demo(force=True)
-            self.assertEqual(seeded["accounts"], 6)
+            self.assertEqual(seeded["accounts"], 25)
             self.assertEqual(seeded["skipped"], 0)
 
             row = get_account_balance("1234567890")

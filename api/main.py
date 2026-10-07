@@ -161,7 +161,11 @@ def health() -> dict:
     if mongo_enabled():
         mongo = "connected" if ping_mongo() else "error"
 
-    tts_info = parler_status()
+    tts_info = {}
+    try:
+        tts_info = parler_status()
+    except Exception as exc:
+        tts_info = {"error": str(exc), "ready": False}
     pipeline_worker = os.environ.get("BANK_PIPELINE_WORKER", "1").strip().lower() not in {
         "0",
         "false",

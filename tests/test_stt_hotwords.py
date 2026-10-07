@@ -53,6 +53,22 @@ class TestSTTHotwords(unittest.TestCase):
         self.assertNotIn("ಖಾತೆ", english_kwargs["hotwords"])
         self.assertIn("nine", english_kwargs["hotwords"])
 
+    @patch("backend.stt.transcriber.WhisperModel")
+    @patch("backend.stt.transcriber.sf.read", return_value=([0.0] * 1600, 16000))
+    @patch("backend.stt.transcriber.is_silent", return_value=False)
+    @patch("backend.stt.transcriber.validate_audio_file")
+    def test_truncated_character_is_stripped(self, _val, _silent, _read, _model_cls):
+        from backend.stt.transcriber import KannadaTranscriber
+
+        mock_model = MagicMock()
+        seg = MagicMock()
+        seg.text = " ನನ್ನ ಖಾತೆಯ ಬಾಕಿ ಎ�"
+        mock_model.transcribe.return_value = ([seg], None)
+        _model_cls.return_value = mock_model
+
+        t = KannadaTranscriber("models/whisper-medium-vaani-ct2", device="cpu")
+        self.assertNotIn("�", t.transcribe("fake.wav"))
+
 
 if __name__ == "__main__":
     unittest.main()

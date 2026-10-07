@@ -13,49 +13,59 @@ from typing import Any
 from api import forms_catalog
 
 # Keywords per form (English + common Kannada transliterations in STT output)
+# IMPORTANT: Only include keywords that are UNAMBIGUOUSLY transactional.
+# Do NOT include short words like "atm", "loan", "fd", "transfer" that also appear
+# in informational queries ("what is ATM block procedure", "loan interest rate").
+# Those queries should go through NLU, not form matching.
 FORM_KEYWORDS: dict[str, tuple[str, ...]] = {
     "balance_inquiry": (
         # Balance uses NLU check_balance intent — not direct form keyword bypass
     ),
     "cash_withdrawal": (
-        "withdraw", "withdrawal", "cash withdrawal", "hinpade", "hinpaduva",
-        "withdraw money", "take cash", "cash out",
+        "cash withdrawal", "withdraw cash", "hinpade", "hinpaduva",
+        "withdraw money", "take cash", "cash out", "ಹಣ ಹಿಂಪಡೆ",
     ),
     "cash_deposit": (
-        "deposit", "cash deposit", "thevani", "tevani", "deposit money",
-        "cheque deposit", "check deposit",
+        "cash deposit", "deposit money", "thevani", "tevani",
+        "cheque deposit", "check deposit", "ಠೇವಣಿ ಮಾಡ",
     ),
     "open_account": (
-        "open account", "new account", "account opening", "khate tege",
-        "khata", "savings account",
+        "open account", "new account", "account opening",
+        "khate tege", "khata terey", "ಖಾತೆ ತೆರೆ",
     ),
     "apply_loan": (
-        "loan", "apply loan", "loan application", "sala", "salakke",
-        "personal loan", "home loan",
+        "loan application", "apply for loan", "apply loan",
+        "loan apply", "salakke arji", "ಸಾಲ ಅರ್ಜಿ",
     ),
     "rtgs_neft": (
-        "rtgs", "neft", "transfer", "fund transfer", "money transfer",
-        "wire transfer", "imps",
+        "rtgs", "neft", "fund transfer", "wire transfer", "imps",
+        "rtgs form", "neft form",
     ),
     "cheque_book_request": (
         "cheque book", "check book", "chequebook", "chek buk",
-        "new cheque", "cheque leaves",
+        "new cheque book", "cheque leaves request",
     ),
     "atm_debit_card": (
-        "atm card", "debit card", "atm", "card application", "new card",
-        "debit card apply",
+        # "atm" alone is too short — matches "block ATM" informational queries
+        # Only match clear NEW CARD requests
+        "new atm card", "atm card apply", "debit card apply",
+        "new debit card", "card application", "atm card request",
+        "ಹೊಸ ಎಟಿಎಂ ಕಾರ್ಡ್",
     ),
     "fixed_deposit": (
-        "fixed deposit", "fd", "term deposit", "sthira thevani",
-        "fixed deposit form",
+        # "fd" alone is too ambiguous — matches "what is FD rate" informational
+        # Only match clear OPEN/CREATE FD requests
+        "open fd", "create fd", "new fixed deposit", "open fixed deposit",
+        "fd open", "sthira thevani open", "ಸ್ಥಿರ ಠೇವಣಿ ತೆರೆ",
     ),
     "mobile_update": (
-        "mobile update", "change mobile", "update mobile", "phone number",
-        "mobile number change", "registered mobile",
+        "mobile update", "update mobile", "change mobile number",
+        "mobile number change", "registered mobile update",
+        "ಮೊಬೈಲ್ ಬದಲಾ", "ಮೊಬೈಲ್ ನವೀಕರಣ",
     ),
     "stop_cheque": (
         "stop cheque", "stop check", "stop payment", "cheque stop",
-        "cancel cheque",
+        "cancel cheque", "ಚೆಕ್ ನಿಲ್ಲಿಸ",
     ),
 }
 

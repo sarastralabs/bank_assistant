@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # setup_new_pc.ps1 - Full first-time setup (venv + libs + models + frontend)
 #
 # From project root:
@@ -47,14 +47,28 @@ function Write-Info($msg) {
     Write-Host "  $msg" -ForegroundColor Gray
 }
 
+function Invoke-PyScript {
+    # Writes a multi-line Python script to a temp file and runs it.
+    # Avoids the PowerShell -c multi-line argument splitting bug.
+    param([string]$PythonExe, [string]$Code)
+    $tmp = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.py'
+    [System.IO.File]::WriteAllText($tmp, $Code, (New-Object System.Text.UTF8Encoding $false))
+    try {
+        $out = & $PythonExe $tmp 2>&1
+        return $out
+    } finally {
+        Remove-Item $tmp -ErrorAction SilentlyContinue
+    }
+}
+
 function Test-HfTokenConfigured {
     param([string]$PythonExe)
     try {
-        $probe = @'
+        $code = @'
 from huggingface_hub import get_token
 print('yes' if get_token() else 'no')
 '@
-        $out = & $PythonExe -c $probe 2>&1
+        $out = Invoke-PyScript -PythonExe $PythonExe -Code $code
         return ("$out" -match "yes")
     } catch {
         return $false
@@ -63,7 +77,7 @@ print('yes' if get_token() else 'no')
 
 function Test-HfGatedAccess {
     param([string]$PythonExe)
-    $script = @'
+    $code = @'
 from huggingface_hub import model_info
 for mid in (
     "ai4bharat/indictrans2-indic-en-dist-200M",
@@ -73,7 +87,7 @@ for mid in (
     model_info(mid)
 print("HF_ACCESS_OK")
 '@
-    $out = & $PythonExe -c $script 2>&1
+    $out = Invoke-PyScript -PythonExe $PythonExe -Code $code
     return ($LASTEXITCODE -eq 0 -and ("$out" -match "HF_ACCESS_OK"))
 }
 
@@ -86,7 +100,7 @@ function Save-HfToken {
     if (-not $Token) { return $false }
     # Pass token via env to avoid shell escaping issues
     $env:SETUP_HF_TOKEN = $Token
-    $script = @'
+    $code = @'
 import os, sys
 from huggingface_hub import login
 token = os.environ.get("SETUP_HF_TOKEN", "").strip()
@@ -95,7 +109,7 @@ if not token:
 login(token=token, add_to_git_credential=True)
 print("HF_LOGIN_OK")
 '@
-    $out = & $PythonExe -c $script 2>&1
+    $out = Invoke-PyScript -PythonExe $PythonExe -Code $code
     Remove-Item Env:SETUP_HF_TOKEN -ErrorAction SilentlyContinue
     return ($LASTEXITCODE -eq 0 -and ("$out" -match "HF_LOGIN_OK"))
 }
@@ -351,9 +365,12 @@ VPip install --upgrade pip wheel
 Write-Host "  Installing build deps (Cython, numpy)..."
 VPip install Cython "numpy>=2.1,<3" setuptools
 
+Write-Host "  Pinning transformers<5 before IndicTransToolkit (avoids v5 API break)..."
+VPip install "transformers>=4.51.0,<5" "huggingface-hub>=0.23,<2.0"
+
 Write-Host "  Installing IndicTransToolkit..."
 try {
-    VPip install IndicTransToolkit --no-build-isolation
+    VPip install IndicTransToolkit --no-build-isolation --constraint (Join-Path $ProjectRoot "scripts\constraints.txt")
 } catch {
     Fail @"
 IndicTransToolkit failed to build.
@@ -373,11 +390,16 @@ Ok "IndicTransToolkit OK"
 Write-Host "  Installing requirements.txt..."
 VPip install -r requirements.txt
 
-VPy -c @"
+$coreCheck = @'
 import fastapi, uvicorn, dotenv, transformers, faster_whisper, soundfile
 print('Core imports OK')
-"@
-if ($LASTEXITCODE -ne 0) { Fail "Package import check failed" }
+'@
+$tmp = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.py'
+[System.IO.File]::WriteAllText($tmp, $coreCheck, (New-Object System.Text.UTF8Encoding $false))
+& $venvPython $tmp 2>&1
+$coreExit = $LASTEXITCODE
+Remove-Item $tmp -ErrorAction SilentlyContinue
+if ($coreExit -ne 0) { Fail "Package import check failed" }
 Ok "All Python dependencies installed"
 
 # --------------------------------------------------------------------------

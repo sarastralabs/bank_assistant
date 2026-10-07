@@ -21,6 +21,9 @@ class DialogContext:
     kiosk_session_id: str = ""
 
 
+_VALID_MODES: frozenset[str] = frozenset({"assist", "form_select", "form"})
+
+
 def parse_dialog_context(raw: dict[str, Any] | None) -> DialogContext:
     if not raw:
         return DialogContext()
@@ -38,8 +41,11 @@ def parse_dialog_context(raw: dict[str, Any] | None) -> DialogContext:
     except (TypeError, ValueError):
         clarify_attempts = 0
 
+    raw_mode = str(raw.get("mode") or "assist").strip().lower()
+    mode = raw_mode if raw_mode in _VALID_MODES else "assist"
+
     return DialogContext(
-        mode=str(raw.get("mode") or "assist").strip().lower(),
+        mode=mode,
         form_id=str(raw.get("form_id") or raw.get("formId") or "").strip(),
         field_id=str(raw.get("field_id") or raw.get("fieldId") or "").strip(),
         last_intent=str(raw.get("last_intent") or raw.get("lastIntent") or "").strip(),

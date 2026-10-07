@@ -14,6 +14,8 @@ models/nlu-distilbert/
 
 # ── Audio files (too large) ────────────────────────────────────────────────────
 data/stt_test_audio/*.wav
+!data/stt_test_audio/clip_*.wav
+!data/stt_test_audio/sample_smoke_*.wav
 data/tts_output/
 data/tts_cache/
 data/runtime_settings.json

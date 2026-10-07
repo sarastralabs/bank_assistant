@@ -23,14 +23,14 @@ export interface VadListenOptions {
   onMicReady?: () => void;
 }
 
-const DEFAULTS: Required<VadListenOptions> = {
-  // Longer end-of-speech wait for natural Kannada speech pauses (was 700ms)
-  silenceMs: 900,
-  minSpeechMs: 350,
+const DEFAULTS: Required<Omit<VadListenOptions, "onMicReady">> = {
+  // Longer end-of-speech wait — 1500ms gives enough time to finish a Kannada sentence
+  silenceMs: 1500,
+  minSpeechMs: 400,
   maxWaitMs: 25000,
   maxUtteranceMs: 18000,
-  // Lower threshold helps quiet laptop mics on Windows (was 0.045)
-  speechThreshold: 0.016,
+  // Very low threshold for quiet laptop mics — RMS values around 0.005 are normal
+  speechThreshold: 0.004,
 };
 
 function pickMimeType(): string | undefined {
@@ -178,6 +178,9 @@ export function useVadRecorder() {
         let speechStartedAt: number | null = null;
         let lastLoudAt: number | null = null;
         let speaking = false;
+        // Track average noise during calibration (not max — max lets one spike ruin the threshold)
+        let noiseFloorSum = 0;
+        let noiseFloorSamples = 0;
         let noiseFloor = cfg.speechThreshold * 0.5;
         let calibrated = false;
 
@@ -191,24 +194,48 @@ export function useVadRecorder() {
             const level = rmsFromAnalyser(analyser, timeBuf);
             setMicLevel(level);
 
-            if (!calibrated && now - startedAt < 400) {
-              noiseFloor = Math.max(noiseFloor, level);
+            // Calibrate noise floor over first 600ms using AVERAGE (not max)
+            if (!calibrated && now - startedAt < 600) {
+              noiseFloorSum += level;
+              noiseFloorSamples += 1;
             } else if (!calibrated) {
               calibrated = true;
+              const avgNoise = noiseFloorSamples > 0
+                ? noiseFloorSum / noiseFloorSamples
+                : 0;
+              // Noise floor = avg background + small margin
+              // Cap at 0.006 so quiet mics (RMS 0.005 when speaking) still trigger
+              const computed = avgNoise * 1.2;
+              noiseFloor = Math.min(
+                Math.max(cfg.speechThreshold, computed),
+                0.006   // hard cap — never block speech on quiet mics
+              );
+              console.log(`[VAD] calibrated: avgNoise=${avgNoise.toFixed(5)} computed=${computed.toFixed(5)} noiseFloor=${noiseFloor.toFixed(5)}`);
             }
 
             const threshold = calibrated
-              ? Math.max(cfg.speechThreshold, noiseFloor * 2.2)
+              ? noiseFloor
               : cfg.speechThreshold;
-            const loud = level >= threshold;
+
+            // HYSTERESIS: use higher threshold to START speech, lower to SUSTAIN
+            // This prevents ambient noise from keeping lastLoudAt alive after speech ends.
+            // startThreshold: must be clearly above noise to trigger speech
+            // sustainThreshold: once speaking, only update lastLoudAt if still clearly audible
+            const startThreshold = threshold;
+            const sustainThreshold = threshold * 2.5; // 2.5x — clearly above noise
+
+            const loudToStart = level >= startThreshold;
+            const loudToSustain = level >= sustainThreshold;
 
             if (!speaking) {
-              if (loud) {
+              if (loudToStart) {
                 speaking = true;
                 speechStartedAt = now;
                 lastLoudAt = now;
                 setState("speech");
+                console.log(`[VAD] speech started level=${level.toFixed(5)} startThreshold=${startThreshold.toFixed(5)} sustainThreshold=${sustainThreshold.toFixed(5)}`);
               } else if (now - startedAt > cfg.maxWaitMs) {
+                console.log(`[VAD] maxWaitMs exceeded — no speech detected`);
                 if (recorder && recorder.state !== "inactive") {
                   recorder.onstop = () => resolve(null);
                   recorder.stop();
@@ -218,13 +245,21 @@ export function useVadRecorder() {
                 return;
               }
             } else {
-              if (loud) lastLoudAt = now;
+              // Only extend lastLoudAt if clearly louder than noise (sustainThreshold)
+              if (loudToSustain) lastLoudAt = now;
               const speechMs = now - (speechStartedAt ?? now);
               const silenceMs = now - (lastLoudAt ?? now);
               const hitMax = speechMs >= cfg.maxUtteranceMs;
               const hitEnd =
                 speechMs >= cfg.minSpeechMs && silenceMs >= cfg.silenceMs;
+
+              // Log every 500ms while speaking so we can see silence accumulating
+              if (Math.floor(speechMs / 500) !== Math.floor((speechMs - 16) / 500)) {
+                console.log(`[VAD] speaking: speechMs=${speechMs.toFixed(0)} silenceMs=${silenceMs.toFixed(0)} level=${level.toFixed(5)} loud=${loudToSustain}`);
+              }
+
               if (hitMax || hitEnd) {
+                console.log(`[VAD] done: speechMs=${speechMs.toFixed(0)} silenceMs=${silenceMs.toFixed(0)} hitEnd=${hitEnd} hitMax=${hitMax}`);
                 setState("processing_local");
                 if (recorder && recorder.state !== "inactive") {
                   recorder.onstop = () => {

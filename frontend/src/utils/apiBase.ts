@@ -16,16 +16,21 @@ const CLOUDFLARE_AGENT_URL: Record<string, string> = {
   "admin.sarastralabs.com": "https://agent.sarastralabs.com",
 };
 
-/** Agent lobby URL for admin “open lobby” links — same host, port 5173. */
+/** Agent lobby URL for admin "open lobby" links — http on localhost, same protocol elsewhere. */
 export function getLobbyUrl(): string {
   const env = import.meta.env.VITE_AGENT_URL as string | undefined;
   if (env?.trim()) {
     return env.replace(/\/$/, "");
   }
   if (typeof window !== "undefined") {
-    const mapped = CLOUDFLARE_AGENT_URL[window.location.hostname];
+    const host = window.location.hostname;
+    const mapped = CLOUDFLARE_AGENT_URL[host];
     if (mapped) return mapped;
-    return `${window.location.protocol}//${window.location.hostname}:5173`;
+    // localhost / 127.0.0.1: mic works on http, so use http for local dev
+    if (host === "localhost" || host === "127.0.0.1") {
+      return `http://${host}:5173`;
+    }
+    return `${window.location.protocol}//${host}:5173`;
   }
   return "http://127.0.0.1:5173";
 }

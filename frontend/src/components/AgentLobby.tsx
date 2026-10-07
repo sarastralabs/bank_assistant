@@ -559,7 +559,8 @@ export function AgentLobby({ apiOnline }: AgentLobbyProps) {
         </div>
       )}
 
-      {greetStatus && <p className="lobby-greet-status">{greetStatus}</p>}
+      {/* During greeting the status is shown once, in the stage below. */}
+      {greetStatus && phase !== "greeting" && <p className="lobby-greet-status">{greetStatus}</p>}
 
       <div className={`lobby-body lobby-body-${phase}`}>
         {(phase === "idle" || phase === "greeting") && (
@@ -589,7 +590,7 @@ export function AgentLobby({ apiOnline }: AgentLobbyProps) {
                     <p className="lobby-invite-kn">{activeGreet.line_kn}</p>
                     <p className="lobby-invite-en">{activeGreet.line_en}</p>
                     <p className="lobby-invite-wait">
-                      ಧ್ವನಿ ಸಿದ್ಧಪಡಿಸಲಾಗುತ್ತಿದೆ — ಕಾಯಿರಿ · Preparing voice — please wait
+                      {greetStatus ?? "ಧ್ವನಿ ಸಿದ್ಧಪಡಿಸಲಾಗುತ್ತಿದೆ — ಕಾಯಿರಿ · Preparing voice — please wait"}
                     </p>
                   </>
                 )}
@@ -633,25 +634,26 @@ export function AgentLobby({ apiOnline }: AgentLobbyProps) {
         )}
 
         {phase === "conversation" && (
-          <>
-            <div
-              className={[
-                "lobby-camera-wrap lobby-camera-mini",
-                presence === "present" ? "lobby-camera-live" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-            >
-              <video ref={videoRef} className="lobby-video" playsInline muted autoPlay />
-              <canvas ref={canvasRef} className="lobby-canvas-hidden" />
-              <div className="lobby-camera-badge">
-                {presence === "present" ? "Detected" : `Cam · ${detectorMode}`}
+          <div className="convo">
+            <aside className="convo-side">
+              <LobbyBot mood={convoMood} className="convo-bot" />
+              {/* Must stay mounted: presence detection ends the session when the customer leaves. */}
+              <div
+                className={[
+                  "convo-camera",
+                  presence === "present" ? "is-live" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                <video ref={videoRef} className="lobby-video" playsInline muted autoPlay />
+                <canvas ref={canvasRef} className="lobby-canvas-hidden" />
+                <span className="convo-camera-badge">
+                  {presence === "present" ? "ಕಾಣುತ್ತಿದ್ದೀರಿ · In view" : `Cam · ${detectorMode}`}
+                </span>
               </div>
-            </div>
-            <main className="lobby-conversation">
-              <div className="lobby-convo-hero">
-                <LobbyBot mood={convoMood} className="lobby-bot-convo" />
-              </div>
+            </aside>
+            <main className="convo-main">
               <HandsFreeConversation
                 active={phase === "conversation"}
                 apiOnline={apiOnline}
@@ -664,7 +666,7 @@ export function AgentLobby({ apiOnline }: AgentLobbyProps) {
                 }}
               />
             </main>
-          </>
+          </div>
         )}
       </div>
     </div>

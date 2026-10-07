@@ -122,7 +122,34 @@ def submit_form(body: FormSubmitBody) -> dict:
         values,
         kiosk_session_id=body.kiosk_session_id,
     )
-    return {"ok": True, "submission": saved}
+    # Load the confirmation messages so the frontend can speak them back to the customer
+    try:
+        import json as _json
+        import os as _os
+        _bank_info_path = _os.path.join(
+            _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))),
+            "data", "bank_info.json",
+        )
+        with open(_bank_info_path, encoding="utf-8") as _f:
+            _bank_info = _json.load(_f)
+        confirmation_kn = _bank_info.get(
+            "form_submitted_kn",
+            "ನಿಮ್ಮ ಅರ್ಜಿಯನ್ನು ಸ್ವೀಕರಿಸಲಾಗಿದೆ. ದಯವಿಟ್ಟು ಹತ್ತಿರದ ಶಾಖೆಗೆ ಭೇಟಿ ನೀಡಿ. ಧನ್ಯವಾದಗಳು.",
+        )
+        confirmation_en = _bank_info.get(
+            "form_submitted_en",
+            "Your request has been recorded. Please visit the nearest branch to complete the process. Thank you.",
+        )
+    except Exception:
+        confirmation_kn = "ನಿಮ್ಮ ಅರ್ಜಿಯನ್ನು ಸ್ವೀಕರಿಸಲಾಗಿದೆ. ದಯವಿಟ್ಟು ಹತ್ತಿರದ ಶಾಖೆಗೆ ಭೇಟಿ ನೀಡಿ. ಧನ್ಯವಾದಗಳು."
+        confirmation_en = "Your request has been recorded. Please visit the nearest branch to complete the process. Thank you."
+
+    return {
+        "ok": True,
+        "submission": saved,
+        "confirmation_kn": confirmation_kn,
+        "confirmation_en": confirmation_en,
+    }
 
 
 @router.post("/forms/resolve-choice")

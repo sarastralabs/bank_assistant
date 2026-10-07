@@ -193,6 +193,10 @@ def _generate_variant(slot: str, variant: int) -> dict:
 
 def _warm_all_variants() -> None:
     global _warm_running
+    with _warm_lock:
+        if _warm_running:
+            return
+        _warm_running = True
     try:
         for slot, lines in GREET_LINES.items():
             for variant in range(len(lines)):

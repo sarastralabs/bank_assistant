@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import threading
+from collections import deque
 from typing import Any
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -19,6 +20,31 @@ WORKER_SCRIPT = os.path.join(PROJECT_ROOT, "run_pipeline_worker.py")
 _lock = threading.Lock()
 _proc: subprocess.Popen[str] | None = None
 _ready = False
+# Last worker stderr lines, for error messages.
+_stderr_tail: deque[str] = deque(maxlen=40)
+
+
+def _drain_stderr(stream) -> None:
+    """
+    Continuously read the worker's stderr.
+
+    Without this the OS pipe buffer fills after enough requests, the worker
+    blocks on its next log write, and every /api/process-audio call hangs
+    forever behind _lock.
+    """
+    try:
+        for line in stream:
+            _stderr_tail.append(line)
+            try:
+                sys.stderr.write(line)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _stderr_snippet(limit: int) -> str:
+    return "".join(_stderr_tail)[-limit:]
 
 
 def worker_enabled() -> bool:
@@ -88,15 +114,18 @@ def _start_locked() -> None:
         bufsize=1,
     )
     assert _proc.stdout is not None
+    _stderr_tail.clear()
+    if _proc.stderr is not None:
+        threading.Thread(
+            target=_drain_stderr,
+            args=(_proc.stderr,),
+            name="pipeline-worker-stderr",
+            daemon=True,
+        ).start()
     try:
         payload = _read_json_line(_proc.stdout)
     except Exception as exc:
-        err = ""
-        if _proc.stderr:
-            try:
-                err = _proc.stderr.read()[:500]
-            except Exception:
-                pass
+        err = _stderr_snippet(500)
         _proc = None
         _ready = False
         raise RuntimeError(f"Pipeline worker failed to start: {exc}; {err}") from exc
@@ -124,12 +153,7 @@ def _request(payload: dict[str, Any]) -> dict[str, Any]:
         try:
             return _read_json_line(_proc.stdout)
         except Exception as exc:
-            err = ""
-            if _proc.stderr:
-                try:
-                    err = _proc.stderr.read()[:800]
-                except Exception:
-                    pass
+            err = _stderr_snippet(800)
             _proc = None
             _ready = False
             raise RuntimeError(f"Pipeline worker died: {exc}; {err}") from exc

@@ -100,8 +100,8 @@ voice-based-assistant/
 │       └── reference_translations.json  # English reference translations
 │
 ├── models/
-│   ├── whisper-medium-ct2/          # Baseline STT model (CTranslate2 int8)
-│   ├── whisper-medium-vaani-ct2/    # Specialized Kannada STT model
+│   ├── whisper-medium-ct2/               # Baseline STT model (CTranslate2 int8)
+│   ├── whisper-kannada-medium-ct2/       # Production Kannada STT model (vasista)
 │   └── nlu-distilbert/              # Fine-tuned DistilBERT + benchmark results
 │
 ├── scripts/
@@ -134,7 +134,7 @@ voice-based-assistant/
 | Module | Model | Size | Notes |
 |--------|-------|------|-------|
 | STT (baseline) | `openai/whisper-medium` | ~400MB int8 | Generic multilingual |
-| STT (specialized) | `ARTPARK-IISc/whisper-medium-vaani-kannada` | ~400MB int8 | Fine-tuned on Kannada VAANI dataset |
+| STT (production) | `vasista22/whisper-kannada-medium` | ~740MB int8 | Fine-tuned on Kannada — stored in `models/whisper-kannada-medium-ct2/` |
 | Translation KN→EN | `ai4bharat/indictrans2-indic-en-dist-200M` | ~800MB | Gated — requires HF auth |
 | Translation EN→KN | `ai4bharat/indictrans2-en-indic-dist-200M` | ~800MB | Gated — requires HF auth |
 | NLU | `distilbert-base-uncased` fine-tuned | ~250MB | Trained on 294 banking sentences |
@@ -264,7 +264,7 @@ Peak GPU memory: ~0.4GB at any moment. Verified stable across 4 repeated runs.
 ## Key Design Decisions
 
 **Why DistilBERT for NLU instead of a larger model?**
-DistilBERT is 40% smaller than BERT-base, 60% faster at inference, and retains 97% of accuracy. For 294 training sentences, the capacity difference is irrelevant — DistilBERT reached 97.8% test accuracy.
+DistilBERT is 40% smaller than BERT-base, 60% faster at inference, and retains 97% of accuracy. For 301 training sentences, the capacity difference is irrelevant — DistilBERT reached 97.8% test accuracy.
 
 **Why Facebook MMS-TTS instead of indic-parler-tts?**
 indic-parler-tts was the original choice (higher voice quality) but has a hard incompatibility with transformers >=4.50: 10 GenerationMixin methods removed from the custom generate() call. MMS-TTS uses VitsModel natively in transformers, has no dependency conflicts, and requires no HuggingFace auth.
@@ -304,6 +304,61 @@ Quick start (kiosk PC calling remote TTS):
 copy .env.kiosk.example .env
 powershell -ExecutionPolicy Bypass -File .\scripts\start-kiosk-api.ps1
 cd frontend; .\scripts\dev-all.ps1
+```
+
+---
+
+## Running Every Day (2 terminals)
+
+**Terminal 1 — Backend API:**
+```powershell
+cd C:\<your-project>\voice-based-assistant
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+Wait ~60 seconds for:
+```
+[startup] pipeline ready model=vasista-medium ...
+INFO: Application startup complete.
+```
+
+**Terminal 2 — Frontend:**
+```powershell
+cd C:\<your-project>\voice-based-assistant\frontend
+$env:VITE_DEV_HTTP="1"
+.\scripts\dev-all.ps1
+```
+
+**Open in browser:**
+| Screen | URL | Notes |
+|--------|-----|-------|
+| Customer kiosk | `http://localhost:5173` | Mic works on HTTP localhost |
+| Admin panel | `http://localhost:5174` | Login: `admin` / `bank@123` |
+| Phone (same Wi-Fi) | `https://<your-ip>:5173` | Needs HTTPS for mic on non-localhost |
+
+> **Note:** Use `http://localhost:5173` (not `https://`) for the kiosk when testing on the same PC.
+> The browser allows microphone on `http://localhost` without HTTPS.
+> For phone access on the same Wi-Fi, use the HTTPS address — the browser will show a
+> certificate warning, click **Advanced → Proceed**.
+
+---
+
+## Testing
+
+```powershell
+# Fast offline tests (no API needed)
+python scripts/e2e_full_test.py --offline-only
+
+# API tests (API must be running, skip slow pipeline)
+python scripts/e2e_full_test.py --skip-pipeline
+
+# Full end-to-end with audio clips (API must be running, ~5 min)
+python scripts/e2e_full_test.py
+
+# Deep module tests
+python scripts/_deep_test.py
+
+# Pre-demo smoke test
+python scripts/production_smoke_test.py
 ```
 
 Verify: `py -3.12 scripts\e2e_local_check.py`

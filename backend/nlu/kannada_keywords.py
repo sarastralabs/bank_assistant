@@ -65,6 +65,16 @@ KANNADA_INTENT_KEYWORDS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Loan repayment questions are informational (bank_info loan_repayment), but
+# they almost always also say "ಸಾಲ"/"loan"/"home loan", which would otherwise
+# win the longest-match and open the loan application form. Checked first.
+REPAYMENT_TERMS: tuple[str, ...] = (
+    "ಮರುಪಾವತಿ",
+    "marupavati",
+    "repay",
+)
+
+
 def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").lower()).strip()
 
@@ -77,6 +87,9 @@ def match_kannada_intent(kannada: str, english: str = "") -> tuple[str, float] |
     combined = _norm(f"{kannada} {english}")
     if not combined:
         return None
+
+    if any(term in combined for term in REPAYMENT_TERMS):
+        return "interest_rate_query", 0.79
 
     best_intent: str | None = None
     best_len = 0

@@ -1,12 +1,14 @@
 import { useState } from "react";
 
+// Accounts whose last 4 digits are unique — saying those 4 gets the balance directly.
+// (Full list of 25 incl. shared endings: docs/WHAT_TO_SPEAK.md §5.)
 const DEMO_ACCOUNTS = [
   { number: "1234567890", name: "ರಾಮೇಶ್ · Ramesh", balance: "₹45,230.50" },
   { number: "9876543210", name: "ಅನಿತಾ · Anita", balance: "₹12,500.00" },
-  { number: "1111222233", name: "ಸುರೇಶ್ · Suresh", balance: "₹89,340.75" },
   { number: "2222333344", name: "ಲಕ್ಷ್ಮಿ · Lakshmi", balance: "₹67,890.25" },
-  { number: "5555666677", name: "ಪ್ರಕಾಶ್ · Prakash", balance: "₹15,250.00" },
-  { number: "8888999900", name: "ಮೀನಾ · Meena", balance: "₹2,40,075.50" },
+  { number: "3456789012", name: "ವಿಜಯ್ · Vijay", balance: "₹8,750.00" },
+  { number: "4567890123", name: "ಕವಿತಾ · Kavitha", balance: "₹1,25,000.00" },
+  { number: "6789012345", name: "ಮೋಹನ್ · Mohan", balance: "₹32,400.75" },
 ];
 
 interface SpeakGuideCardProps {
@@ -48,8 +50,8 @@ export function SpeakGuideCard({ compact = false }: SpeakGuideCardProps) {
             <li>
               <strong>ಕಾಯಿರಿ · Wait</strong>
               <span>
-                Green “Listening” appears before you speak. While “Preparing voice / Mic ready”
-                shows, wait — do not talk yet.
+                Speak only when the big status turns green “ಈಗ ಮಾತನಾಡಿ · Speak now”. While it says
+                “Please wait” or “Listen”, do not talk yet.
               </span>
             </li>
             <li>
@@ -59,8 +61,8 @@ export function SpeakGuideCard({ compact = false }: SpeakGuideCardProps) {
             <li>
               <strong>ಬ್ಯಾಲೆನ್ಸ್ · Balance</strong>
               <span>
-                Say “ಖಾತೆ ಬ್ಯಾಲೆನ್ಸ್” then all <em>10</em> digits including the final zero
-                (e.g. one-two-three…nine-zero).
+                Say “ಖಾತೆ ಬ್ಯಾಲೆನ್ಸ್”, then the <em>last 4</em> digits of the account (e.g.
+                seven-eight-nine-zero). If asked, say the last 6.
               </span>
             </li>
             <li>
@@ -83,11 +85,14 @@ export function SpeakGuideCard({ compact = false }: SpeakGuideCardProps) {
           </div>
 
           <div className="speak-guide-accounts">
-            <p className="speak-guide-examples-title">Demo accounts (10 digits)</p>
+            <p className="speak-guide-examples-title">Demo accounts (say the last 4 digits)</p>
             <ul className="speak-guide-account-list">
               {DEMO_ACCOUNTS.map((a) => (
                 <li key={a.number}>
-                  <code>{a.number}</code>
+                  <code>
+                    {a.number.slice(0, -4)}
+                    <strong>{a.number.slice(-4)}</strong>
+                  </code>
                   <span>{a.name}</span>
                   <span className="speak-guide-bal">{a.balance}</span>
                 </li>

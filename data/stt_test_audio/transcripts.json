@@ -1,4 +1,5 @@
 {
+  "_note": "Clips 005, 008, 009, 010 are intentionally absent — they were recorded but excluded from the benchmark due to background noise or overlapping speech that made ground-truth transcription unreliable. Do not add them back without re-verifying transcripts.",
   "clip_001.wav": "ನನ್ನ ಖಾತೆಯ ಬಾಕಿ ಎಷ್ಟಿದೆ",
   "clip_002.wav": "ಹಣ ವರ್ಗಾಯಿಸಲು ಸಹಾಯ ಮಾಡಿ",
   "clip_003.wav": "ಸಾಲ ಅರ್ಜಿ ಹೇಗೆ ಮಾಡಬೇಕು",

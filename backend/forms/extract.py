@@ -205,8 +205,25 @@ def _extract_name(text: str) -> str:
     return " ".join(w.capitalize() for w in cleaned.split())
 
 
+def _words_to_date_part(tokens: list[str]) -> int | None:
+    """Convert a list of English number word tokens to an integer (for day/month/year).
+    Handles: 'fourteen'=14, 'two thousand three'=2003, 'nineteen ninety five'=1995.
+    """
+    # Special: "nineteen|eighteen|seventeen... <tens><ones>" = 1900s/1800s etc.
+    # e.g. 'nineteen ninety five' -> 1995, 'nineteen eighty' -> 1980
+    if len(tokens) >= 2 and tokens[0] in _ONES:
+        century_prefix = _ONES[tokens[0]]  # e.g. nineteen=19
+        if 13 <= century_prefix <= 20:
+            rest = _words_to_number(tokens[1:])
+            if rest is not None and 0 <= rest <= 99:
+                return century_prefix * 100 + rest
+    return _words_to_number(tokens)
+
+
 def _extract_date(text: str) -> str:
     t = text.strip()
+
+    # 1. Try digit patterns first (14/10/2003 or 14-10-2003)
     for fmt, out_fmt in (
         (r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", "%d/%m/%Y"),
         (r"(\d{1,2})[/-](\d{1,2})[/-](\d{2})", "%d/%m/%y"),
@@ -225,8 +242,112 @@ def _extract_date(text: str) -> str:
                 return dt.strftime("%d/%m/%Y")
             except ValueError:
                 pass
+
     if re.search(r"\btoday\b", t, re.I):
         return datetime.now().strftime("%d/%m/%Y")
+
+    # 2. Try English number words — handles "fourteen ten two thousand three"
+    #    Strategy: tokenize, then greedily parse day/month/year groups.
+    #    Day = first 1–2 word group (1–31)
+    #    Month = second 1–2 word group (1–12)
+    #    Year = remaining tokens (e.g. "two thousand three" = 2003)
+    clean = re.sub(r"[,./\-]+", " ", t.lower()).strip()
+    clean = re.sub(r"\b(of|the|st|nd|rd|th|born|dob|date|birth|my|is)\b", " ", clean)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    tokens = [tok for tok in clean.split() if tok]
+
+    # All-word tokens — try to extract 3 groups
+    # Use a sliding window: try all split points [i, j] where
+    # tokens[0:i] = day, tokens[i:j] = month, tokens[j:] = year
+    best: tuple[int, int, int] | None = None
+    for i in range(1, min(3, len(tokens))):
+        for j in range(i + 1, min(i + 3, len(tokens))):
+            day_tok = tokens[:i]
+            mon_tok = tokens[i:j]
+            yr_tok = tokens[j:]
+            if not yr_tok:
+                continue
+            day = _words_to_date_part(day_tok)
+            mon = _words_to_date_part(mon_tok)
+            yr = _words_to_date_part(yr_tok)
+            if day is None or mon is None or yr is None:
+                continue
+            if not (1 <= day <= 31 and 1 <= mon <= 12):
+                continue
+            # Prefer 4-digit years; handle 2-digit years (e.g. "three" = 2003? no — 3)
+            # Only accept years >= 1900
+            if yr < 100:
+                yr = 2000 + yr if yr < 50 else 1900 + yr
+            if yr < 1900 or yr > 2100:
+                continue
+            best = (day, mon, yr)
+            break
+        if best:
+            break
+
+    if best:
+        day, mon, yr = best
+        try:
+            dt = datetime(yr, mon, day)
+            return dt.strftime("%d/%m/%Y")
+        except ValueError:
+            pass
+
+    # 3. Mixed: some digits, some words — try to extract 3 numeric tokens
+    num_tokens: list[int] = []
+    all_toks = _tokenize(t)
+    i = 0
+    while i < len(all_toks) and len(num_tokens) < 4:
+        tok = all_toks[i]
+        if tok.isdigit():
+            num_tokens.append(int(tok))
+            i += 1
+        elif tok in _ONES:
+            # Try to build a multi-word number (for year like "two thousand three")
+            sub: list[str] = []
+            while i < len(all_toks):
+                t2 = all_toks[i]
+                if t2 in _ONES or t2 in _TENS or t2 in _SCALES or t2.isdigit():
+                    sub.append(t2)
+                    i += 1
+                    # Stop if we have enough for day/month (1-2 words) or a year
+                    n = _words_to_number(sub)
+                    if n is not None and (1 <= n <= 31 or n >= 1000):
+                        # If it's a plausible year (>100), stop here
+                        if n > 31:
+                            num_tokens.append(n)
+                            break
+                        # Otherwise see if next token extends the number
+                        if i < len(all_toks) and all_toks[i] not in _ONES and all_toks[i] not in _TENS and all_toks[i] not in _SCALES:
+                            num_tokens.append(n)
+                            break
+                else:
+                    n = _words_to_number(sub)
+                    if n is not None:
+                        num_tokens.append(n)
+                    break
+        elif tok in _TENS:
+            sub = [tok]
+            i += 1
+            if i < len(all_toks) and all_toks[i] in _ONES:
+                sub.append(all_toks[i])
+                i += 1
+            n = _words_to_number(sub)
+            if n is not None:
+                num_tokens.append(n)
+        else:
+            i += 1
+
+    if len(num_tokens) >= 3:
+        d, m2, y = num_tokens[0], num_tokens[1], num_tokens[2]
+        if y < 100:
+            y = 2000 + y if y < 50 else 1900 + y
+        try:
+            dt = datetime(y, m2, d)
+            return dt.strftime("%d/%m/%Y")
+        except ValueError:
+            pass
+
     return t
 
 

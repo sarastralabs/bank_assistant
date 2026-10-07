@@ -49,9 +49,18 @@ def test_mobile_and_account_validation() -> None:
         field_id="account_number",
     )
     assert validate_captured_value(
-        "1234",
+        "12345",
         field_type="digits",
         field_id="account_number",
+    )
+    # Last-4 shortcut: 4 digits are accepted and resolved via account lookup.
+    assert (
+        validate_captured_value(
+            "1234",
+            field_type="digits",
+            field_id="account_number",
+        )
+        is None
     )
 
 

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from api import admin_auth
 from backend.db import store
 
 router = APIRouter(prefix="/history", tags=["history"])
@@ -24,13 +25,13 @@ def get_item(item_id: str) -> dict:
 
 
 @router.delete("/{item_id}")
-def delete_item(item_id: str) -> dict:
+def delete_item(item_id: str, _admin: dict = Depends(admin_auth.require_admin)) -> dict:
     if not store.delete_query(item_id):
         raise HTTPException(status_code=404, detail="History item not found")
     return {"ok": True, "id": item_id}
 
 
 @router.delete("")
-def clear_all() -> dict:
+def clear_all(_admin: dict = Depends(admin_auth.require_admin)) -> dict:
     deleted = store.clear_queries()
     return {"ok": True, "deleted": deleted}

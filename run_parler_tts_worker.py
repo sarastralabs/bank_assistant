@@ -28,7 +28,11 @@ os.environ.setdefault("BANK_PARLER_COMPILE", "0")
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 os.environ.setdefault("TORCH_COMPILE_DISABLE", "1")
 
-from parler_model_utils import max_new_tokens_for_text  # noqa: E402
+from parler_model_utils import (  # noqa: E402
+    chunk_pause_s,
+    max_new_tokens_for_text,
+    split_tts_chunks,
+)
 
 SPEAKER_DESCRIPTIONS = {
     "Suresh": (
@@ -92,11 +96,18 @@ def main() -> int:
                 f"BANK_PARLER_DEVICE={device} is invalid; "
                 f"only {torch.cuda.device_count()} CUDA device(s) are visible"
             )
-        torch.backends.cudnn.benchmark = True
+        # Off by default: Parler's audio decoder sees a new input shape on almost
+        # every request, so cuDNN autotuning re-ran each time and made generation
+        # 2-4x slower (measured on RTX 4060: 15 s -> 6 s for a 370-char reply).
+        torch.backends.cudnn.benchmark = os.environ.get(
+            "BANK_PARLER_CUDNN_BENCHMARK", "0"
+        ).strip().lower() in {"1", "true", "yes", "on"}
         torch.backends.cuda.matmul.allow_tf32 = True
     _log(f"[parler-worker] loading {MODEL_ID} on {device}")
 
     model, precision = _load_model(device)
+    # Samples per generated audio frame (DAC hop) — max_new_tokens counts frames.
+    HOP = int(getattr(model.config.audio_encoder, "hop_length", 0) or 512)
     eager_forward = model.forward
     compile_mode = os.environ.get("BANK_PARLER_COMPILE", "0").strip().lower()
     compiled = compile_mode not in {"", "0", "false", "off", "no"}
@@ -179,9 +190,18 @@ def main() -> int:
         try:
             tokenize_started = time.perf_counter()
             desc_ids = description_inputs[speaker]
-            prompt_ids = tokenizer(text, return_tensors="pt").to(device)
+            # Long replies are split into short chunks generated as ONE batch:
+            # time follows the longest chunk, and each chunk has its own token
+            # budget (a single pass cut long replies off at the cap).
+            batch_on = os.environ.get("BANK_PARLER_BATCH_CHUNKS", "1").strip().lower() not in {
+                "0",
+                "false",
+                "off",
+                "no",
+            }
+            chunks = (split_tts_chunks(text) if batch_on else []) or [text]
+            max_batch = max(1, int(os.environ.get("BANK_PARLER_MAX_BATCH", "16")))
             tokenize_s = time.perf_counter() - tokenize_started
-            max_tokens = max_new_tokens_for_text(text)
             # Greedy decode (do_sample=0) often collapses to ~1 word / silence.
             # Sampling matches prior working behavior for full Kannada sentences.
             do_sample = os.environ.get("BANK_PARLER_DO_SAMPLE", "1").strip().lower() in {
@@ -189,55 +209,81 @@ def main() -> int:
                 "true",
                 "yes",
             }
-            gen_kwargs: dict = {
-                "input_ids": desc_ids.input_ids,
-                "attention_mask": desc_ids.attention_mask,
-                "prompt_input_ids": prompt_ids.input_ids,
-                "prompt_attention_mask": prompt_ids.attention_mask,
-                "max_new_tokens": max_tokens,
-                "do_sample": do_sample,
-            }
-            if do_sample:
-                gen_kwargs["temperature"] = float(os.environ.get("BANK_PARLER_TEMPERATURE", "0.9"))
+            temperature = float(os.environ.get("BANK_PARLER_TEMPERATURE", "0.9"))
+            sr = int(model.config.sampling_rate)
             if device.startswith("cuda"):
                 torch.cuda.synchronize(device)
                 torch.cuda.reset_peak_memory_stats(device)
             generation_started = time.perf_counter()
-            try:
-                with torch.inference_mode():
-                    generation = model.generate(**gen_kwargs)
-            except Exception as compile_exc:
-                if not compiled:
-                    raise
-                _log(
-                    "[parler-worker] compiled generation failed; "
-                    f"retrying eager: {compile_exc}"
-                )
-                compiled = False
-                model.forward = eager_forward
-                model.generation_config.cache_implementation = None
-                if device.startswith("cuda"):
-                    torch.cuda.empty_cache()
-                with torch.inference_mode():
-                    generation = model.generate(**gen_kwargs)
+
+            from backend.tts.audio_util import trim_trailing_silence
+
+            chunk_audio: list[np.ndarray] = []
+            max_tokens = 0
+            max_frames = 0
+            hit_limit = False
+            for start in range(0, len(chunks), max_batch):
+                group = chunks[start : start + max_batch]
+                n = len(group)
+                prompt_ids = tokenizer(group, return_tensors="pt", padding=True).to(device)
+                budget = max(max_new_tokens_for_text(c) for c in group)
+                max_tokens = max(max_tokens, budget)
+                gen_kwargs: dict = {
+                    "input_ids": desc_ids.input_ids.repeat(n, 1),
+                    "attention_mask": desc_ids.attention_mask.repeat(n, 1),
+                    "prompt_input_ids": prompt_ids.input_ids,
+                    "prompt_attention_mask": prompt_ids.attention_mask,
+                    "max_new_tokens": budget,
+                    "do_sample": do_sample,
+                    "return_dict_in_generate": True,
+                }
+                if do_sample:
+                    gen_kwargs["temperature"] = temperature
+                try:
+                    with torch.inference_mode():
+                        out = model.generate(**gen_kwargs)
+                except Exception as compile_exc:
+                    if not compiled:
+                        raise
+                    _log(
+                        "[parler-worker] compiled generation failed; "
+                        f"retrying eager: {compile_exc}"
+                    )
+                    compiled = False
+                    model.forward = eager_forward
+                    model.generation_config.cache_implementation = None
+                    if device.startswith("cuda"):
+                        torch.cuda.empty_cache()
+                    with torch.inference_mode():
+                        out = model.generate(**gen_kwargs)
+
+                lengths = getattr(out, "audios_length", None)
+                for i in range(n):
+                    seq = out.sequences[i]
+                    if lengths is not None:
+                        seq = seq[: int(lengths[i])]
+                    audio = seq.float().cpu().numpy().reshape(-1).astype(np.float32)
+                    # Parler emits audio frames of HOP samples; the budget is in frames.
+                    frames = -(-len(audio) // HOP)
+                    max_frames = max(max_frames, frames)
+                    # Parler stops ~9 frames short of the budget (codebook delay pattern).
+                    hit_limit = hit_limit or frames >= budget - 12
+                    chunk_audio.append(
+                        trim_trailing_silence(audio, sr, threshold=0.01, pad_ms=120)
+                    )
             if device.startswith("cuda"):
                 torch.cuda.synchronize(device)
             generation_s = time.perf_counter() - generation_started
-            generated_tokens = int(generation.shape[-1]) if generation.ndim else 0
-            encode_started = time.perf_counter()
-            audio_arr = generation.cpu().numpy().squeeze()
-            if getattr(audio_arr, "dtype", None) is not None and audio_arr.dtype != np.float32:
-                audio_arr = audio_arr.astype(np.float32)
-            # Trim only long trailing silence — keep quiet speech (threshold 0.01)
-            from backend.tts.audio_util import trim_trailing_silence
 
-            audio_arr = trim_trailing_silence(
-                audio_arr,
-                int(model.config.sampling_rate),
-                threshold=0.01,
-                pad_ms=250,
-            )
-            sr = int(model.config.sampling_rate)
+            encode_started = time.perf_counter()
+            pieces: list[np.ndarray] = []
+            for i, (chunk, audio) in enumerate(zip(chunks, chunk_audio)):
+                pieces.append(audio)
+                if i < len(chunks) - 1:
+                    pieces.append(np.zeros(int(sr * chunk_pause_s(chunk)), dtype=np.float32))
+            audio_arr = np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.float32)
+            # Trim only long trailing silence — keep quiet speech (threshold 0.01)
+            audio_arr = trim_trailing_silence(audio_arr, sr, threshold=0.01, pad_ms=250)
             buf = io.BytesIO()
             sf.write(buf, audio_arr, sr, format="WAV")
             b64 = base64.b64encode(buf.getvalue()).decode("ascii")
@@ -246,9 +292,10 @@ def main() -> int:
             audio_duration_s = len(audio_arr) / sr if sr else 0.0
             metrics = {
                 "text_chars": len(text),
+                "chunks": len(chunks),
                 "max_new_tokens": max_tokens,
-                "generated_tokens": generated_tokens,
-                "hit_token_limit": generated_tokens >= max_tokens,
+                "generated_frames": max_frames,
+                "hit_token_limit": hit_limit,
                 "tokenize_s": round(tokenize_s, 3),
                 "generation_s": round(generation_s, 3),
                 "encode_s": round(encode_s, 3),
@@ -272,7 +319,8 @@ def main() -> int:
             }
             _log(
                 "[parler-worker] "
-                f"speaker={speaker} chars={len(text)} max_tokens={max_tokens} "
+                f"speaker={speaker} chars={len(text)} chunks={len(chunks)} "
+                f"max_tokens={max_tokens} frames={max_frames} hit_limit={int(hit_limit)} "
                 f"generation_s={generation_s:.3f} audio_s={audio_duration_s:.3f} "
                 f"total_s={total_s:.3f}"
             )

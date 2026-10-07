@@ -64,46 +64,6 @@ export function FormFilledChips({ fields, values, currentFieldId }: FormFilledCh
   );
 }
 
-interface AgentSubtitleProps {
-  text: string | null;
-}
-
-export function AgentSubtitle({ text }: AgentSubtitleProps) {
-  if (!text?.trim()) return null;
-  return (
-    <p className="live-subtitle" aria-live="polite">
-      {text}
-    </p>
-  );
-}
-
-interface PipelineProgressProps {
-  active?: boolean;
-  mode?: "assist" | "form";
-}
-
-const ASSIST_STEPS = [
-  "ಕೇಳುತ್ತಿದ್ದೇನೆ",
-  "ಅರ್ಥಮಾಡಿಕೊಳ್ಳುತ್ತಿದ್ದೇನೆ",
-  "ಉತ್ತರ ಸಿದ್ಧಪಡಿಸುತ್ತಿದ್ದೇನೆ",
-  "ಉತ್ತರ ನೀಡುತ್ತಿದ್ದೇನೆ",
-];
-const FORM_STEPS = ["ಕೇಳುತ್ತಿದ್ದೇನೆ", "ಗುರುತಿಸುತ್ತಿದ್ದೇನೆ", "ಪೂರ್ಣ"];
-
-export function PipelineProgress({ active, mode = "assist" }: PipelineProgressProps) {
-  if (!active) return null;
-  const steps = mode === "form" ? FORM_STEPS : ASSIST_STEPS;
-  return (
-    <div className="live-pipeline" aria-hidden>
-      {steps.map((label, i) => (
-        <span key={label} className={`live-pipeline-step${i <= 1 ? " is-active" : ""}`}>
-          {label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 export interface BalanceResultView {
   found: boolean;
   account_number: string;

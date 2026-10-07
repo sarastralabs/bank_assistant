@@ -377,8 +377,8 @@ GREET_LINES: dict[GreetSlot, list[GreetLine]] = {
                 "ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?"
             ),
             "line_en": (
-                "Good night, namaskara. Thank you for your time — "
-                "what may I do for you?"
+                "Namaskara. Welcome to the Kannada voice banking service — "
+                "how may I help you?"
             ),
         },
     ],

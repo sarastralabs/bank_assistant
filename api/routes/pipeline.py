@@ -95,7 +95,7 @@ async def transcribe_audio(audio: UploadFile = File(...)) -> dict:
                     from backend.stt import transcribe
                     from backend.translation import translate_kn_to_en
 
-                    kn = transcribe(tmp_wav, beam_size=1) or ""
+                    kn = transcribe(tmp_wav, beam_size=3) or ""
                     en = translate_kn_to_en(kn) if kn.strip() else ""
                     return {
                         "kannada_text": kn,

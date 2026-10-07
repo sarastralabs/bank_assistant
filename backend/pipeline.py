@@ -159,7 +159,7 @@ def run_pipeline(
     _unload_stt = None
     try:
         from backend.stt import transcribe, unload_model as _unload_stt
-        result.kannada_text = transcribe(audio_path, beam_size=1)
+        result.kannada_text = transcribe(audio_path, beam_size=3)
     except Exception as exc:
         result.error = "STT failed: " + str(exc)
         result.total_time_s = round(time.perf_counter() - t_total, 2)
@@ -227,11 +227,12 @@ def run_pipeline(
             )
             if picked:
                 intent, conf = picked
-                routing = route(intent, result.english_text)
+                routing = route(intent, result.english_text, result.kannada_text)
                 result.intent = intent
                 result.confidence = conf
                 result.route = routing["route"]
                 result.response_text = routing["response_text"]
+                result.response_text_kn = routing.get("response_text_kn", "")
                 result.required_fields = list(routing.get("required_fields") or [])
                 result.form_id = form_id_for_intent(intent) or ""
                 result.form_menu = []
@@ -263,11 +264,12 @@ def run_pipeline(
                 routed = True
             elif follow and follow.get("type") == "interest_product":
                 product = str(follow.get("product") or "")
-                routing = route("interest_rate_query", f"interest rate for {product}")
+                routing = route("interest_rate_query", f"interest rate for {product}", result.kannada_text)
                 result.intent = "interest_rate_query"
                 result.confidence = 0.8
                 result.route = routing["route"]
                 result.response_text = routing["response_text"]
+                result.response_text_kn = routing.get("response_text_kn", "")
                 result.required_fields = list(routing.get("required_fields") or [])
                 routed = True
 
@@ -354,9 +356,10 @@ def run_pipeline(
                 result.form_id = ""
                 result.form_menu = []
             else:
-                routing = route(result.intent, result.english_text)
+                routing = route(result.intent, result.english_text, result.kannada_text)
                 result.route = routing["route"]
                 result.response_text = routing["response_text"]
+                result.response_text_kn = routing.get("response_text_kn", "")
                 result.required_fields = list(routing.get("required_fields") or [])
                 result.form_id = form_id_for_intent(result.intent) or ""
                 result.form_menu = []
